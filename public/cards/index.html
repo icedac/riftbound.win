@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Riftbound Cards</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="page-cards">
+    <header class="site-header">
+      <a class="site-brand" href="/">Riftbound Vault</a>
+      <nav class="site-nav" aria-label="Primary">
+        <a class="active" href="/cards/">Cards</a>
+        <a href="/decks/">Decks</a>
+        <a href="/community/">Community</a>
+      </nav>
+    </header>
+
+    <main class="layout">
+      <div class="page-head">
+        <div>
+          <p class="eyebrow">Catalog</p>
+          <h1>Cards</h1>
+        </div>
+        <p id="summary">Loading cards...</p>
+      </div>
+
+      <section class="filters" aria-label="Card filters">
+        <label>
+          Search
+          <input id="search" type="search" placeholder="Name, ID, text, tag" autocomplete="off" />
+        </label>
+        <label>
+          Color
+          <select id="color"></select>
+        </label>
+        <label>
+          Type
+          <select id="type"></select>
+        </label>
+        <label>
+          Set
+          <select id="set"></select>
+        </label>
+        <label>
+          Rarity
+          <select id="rarity"></select>
+        </label>
+        <label>
+          Cost
+          <select id="cost"></select>
+        </label>
+        <label>
+          Tag
+          <select id="tag"></select>
+        </label>
+        <label class="check">
+          <input id="backOnly" type="checkbox" />
+          Has back image
+        </label>
+        <label class="check">
+          <input id="hideBanned" type="checkbox" checked />
+          Hide banned
+        </label>
+        <button id="reset" class="reset-button" type="button">Reset</button>
+      </section>
+
+      <section class="results" aria-live="polite">
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+
+    <dialog id="detail">
+      <button id="closeDetail" class="icon-button" type="button" aria-label="Close">x</button>
+      <div id="detailBody"></div>
+    </dialog>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

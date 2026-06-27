@@ -1,3 +1,5 @@
+import { appendFoilLayers, bindFoilSurface } from "/foil.js";
+
 const state = {
   cards: [],
   filtered: [],
@@ -45,6 +47,7 @@ async function boot() {
   state.cards = await response.json();
   buildFilters();
   bindEvents();
+  readInitialSearch();
   applyFilters();
 }
 
@@ -130,8 +133,6 @@ function cardNode(card) {
   article.dataset.rarity = card.rarity || "";
   const button = document.createElement("button");
   button.type = "button";
-  button.addEventListener("pointermove", (event) => updateFoilPointer(article, event));
-  button.addEventListener("pointerleave", () => resetFoilPointer(article));
   button.addEventListener("click", () => openDetail(card));
 
   const imageWrap = div(
@@ -150,7 +151,10 @@ function cardNode(card) {
   image.src = card.local_image || card.image_url || "";
   image.alt = card.name;
   imageWrap.append(image);
-  if (card.has_foil) appendFoilLayers(imageWrap);
+  if (card.has_foil) {
+    appendFoilLayers(imageWrap, { premium: isPremiumFoil(card) });
+    bindFoilSurface(imageWrap, { intensity: isPremiumFoil(card) ? 1 : 0.82, tilt: 5.2 });
+  }
 
   const body = div("card-body");
   const title = div("card-title");
@@ -217,9 +221,8 @@ function openDetail(card) {
     image.alt = `${card.name} ${entry.label}`;
     shell.append(image);
     if (card.has_foil) {
-      appendFoilLayers(shell);
-      shell.addEventListener("pointermove", (event) => updateFoilPointer(shell, event));
-      shell.addEventListener("pointerleave", () => resetFoilPointer(shell));
+      appendFoilLayers(shell, { premium: isPremiumFoil(card) });
+      bindFoilSurface(shell, { intensity: 1, tilt: 3.6 });
     }
     images.append(shell);
   }
@@ -273,6 +276,14 @@ function resetFilters() {
   els.backOnly.checked = false;
   els.hideBanned.checked = true;
   applyFilters();
+}
+
+function readInitialSearch() {
+  const params = new URLSearchParams(window.location.search);
+  const query = params.get("q");
+  if (!query) return;
+  state.search = query.trim().toLowerCase();
+  els.search.value = query.trim();
 }
 
 function uniqueValues(values) {
@@ -368,38 +379,6 @@ function isPremiumFoil(card) {
     card.has_foil &&
       (!card.has_normal || card.promo || ["Showcase", "Epic"].includes(card.rarity))
   );
-}
-
-function appendFoilLayers(parent) {
-  for (const className of ["foil-prism", "foil-lines", "foil-glare"]) {
-    parent.append(div(`foil-layer ${className}`));
-  }
-}
-
-function updateFoilPointer(targetNode, event) {
-  const isFoilTarget =
-    targetNode.classList.contains("is-foil-card") ||
-    targetNode.classList.contains("is-foil-detail");
-  if (!isFoilTarget) return;
-  const rect = targetNode.getBoundingClientRect();
-  const x = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
-  const y = clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100);
-  const isDetail = targetNode.classList.contains("is-foil-detail");
-  targetNode.style.setProperty("--pointer-x", `${x.toFixed(2)}%`);
-  targetNode.style.setProperty("--pointer-y", `${y.toFixed(2)}%`);
-  targetNode.style.setProperty("--foil-opacity", isDetail ? "0.24" : "0.30");
-  targetNode.style.setProperty("--foil-glare", isDetail ? "0.28" : "0.32");
-}
-
-function resetFoilPointer(targetNode) {
-  targetNode.style.removeProperty("--pointer-x");
-  targetNode.style.removeProperty("--pointer-y");
-  targetNode.style.removeProperty("--foil-opacity");
-  targetNode.style.removeProperty("--foil-glare");
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }
 
 function paragraph(text) {

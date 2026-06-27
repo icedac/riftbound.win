@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Riftbound Community</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="page-community">
+    <header class="site-header">
+      <a class="site-brand" href="/">Riftbound Vault</a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/cards/">Cards</a>
+        <a href="/decks/">Decks</a>
+        <a class="active" href="/community/">Community</a>
+      </nav>
+    </header>
+
+    <main class="community-frame">
+      <aside class="board-rail" aria-label="Boards">
+        <button class="board-tab active" type="button" data-board="free">free</button>
+        <button class="board-tab" type="button" data-board="deck">deck</button>
+        <button class="board-tab" type="button" data-board="notice">notice</button>
+      </aside>
+
+      <section class="feed" aria-label="Posts">
+        <div class="page-head compact">
+          <div>
+            <p class="eyebrow">Community</p>
+            <h1 id="boardTitle">free</h1>
+          </div>
+          <p id="boardSummary">Loading posts...</p>
+        </div>
+
+        <form id="postForm" class="post-composer">
+          <input id="postTitle" required maxlength="90" placeholder="Title" autocomplete="off" />
+          <textarea id="postBody" rows="4" maxlength="800" placeholder="Text"></textarea>
+          <button type="submit">Post</button>
+        </form>
+
+        <div id="postList" class="post-list"></div>
+      </section>
+
+      <aside class="community-side">
+        <h2>Boards</h2>
+        <p>free, deck, notice 기준으로 임시 저장되는 로컬 BBS.</p>
+        <div class="board-counts" id="boardCounts"></div>
+      </aside>
+    </main>
+
+    <script src="/community.js" type="module"></script>
+  </body>
+</html>
