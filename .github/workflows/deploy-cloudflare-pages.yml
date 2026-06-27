@@ -46,3 +46,12 @@ jobs:
           CLOUDFLARE_OPTIONAL_PAGES_DOMAINS: randomgame.kr
         run: |
           python3 scripts/ensure_cloudflare_pages_domain.py
+
+      - name: Point DNS at Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_DNS_DOMAINS: riftbound.kr
+          CLOUDFLARE_PAGES_DNS_TARGET: riftbound-win.pages.dev
+        run: |
+          python3 scripts/ensure_cloudflare_pages_dns.py
