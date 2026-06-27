@@ -9,7 +9,7 @@ export function appendFoilLayers(parent, options = {}) {
   const variant = options.variant || "rift";
   parent.classList.add("foil-surface", `foil-${variant}`);
   if (options.premium) parent.classList.add("foil-premium");
-  for (const className of ["foil-spectrum", "foil-etch", "foil-sparkle", "foil-glare"]) {
+  for (const className of ["foil-spectrum", "foil-sparkle", "foil-glare"]) {
     const layer = document.createElement("div");
     layer.className = `foil-layer ${className}`;
     parent.append(layer);

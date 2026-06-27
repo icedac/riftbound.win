@@ -1,6 +1,6 @@
 import { appendFoilLayers, bindFoilSurface } from "/foil.js";
 
-const featuredIds = ["ARC-001", "UNL-236-STAR", "OGN-111", "UNL-131", "OGN-001"];
+const featuredIds = ["OGN-066-P", "OGN-255-P", "OGN-066a", "OGN-303-STAR", "SFD-227-STAR"];
 
 const els = {
   heroCards: document.querySelector("#heroCards"),
@@ -50,7 +50,7 @@ function renderHero(cards) {
     bindFoilSurface(shell, { intensity: 1, tilt: 3.1 });
 
     const caption = document.createElement("span");
-    caption.textContent = card.id;
+    caption.textContent = index === 0 ? "Ahri promo" : card.id;
     shell.append(caption);
     fragment.append(shell);
   });

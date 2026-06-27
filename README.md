@@ -16,7 +16,8 @@ Local pages:
 - `/` foil-heavy landing page
 - `/cards/` full card catalog and filters
 - `/decks/` deck builder with `3x OGN-111` style import/export
-- `/community/` temporary local BBS for `free`, `deck`, and `notice`
+- `/community/` BBS for `free`, `deck`, and `notice`
+- `/profile/` member profile and linked-login page
 
 The sync command writes:
 
@@ -33,7 +34,31 @@ The `main` branch deploys through `.github/workflows/deploy-cloudflare-pages.yml
 - `CLOUDFLARE_ACCOUNT_ID`
 - `CLOUDFLARE_API_TOKEN`
 
-The workflow deploys `public/` to the `riftbound-win` Cloudflare Pages project and attaches `riftbound.win` as the custom domain. It also attempts `randomgame.kr` as an optional Pages domain; that domain must be registered and configured before it can resolve publicly.
+The workflow deploys `public/` to the `riftbound-win` Cloudflare Pages project and attaches `riftbound.win` and `riftbound.kr` as custom domains. It also attempts `randomgame.kr` as an optional Pages domain.
+
+The Pages deployment includes `public/_worker.js` for community uploads, profiles, and OAuth login. `scripts/prepare_cloudflare_pages_backend.py` runs in CI before deploy and:
+
+- creates or reuses the D1 database `riftbound-win`
+- creates or reuses the R2 bucket `riftbound-win-media`
+- injects `DB` and `MEDIA` bindings into `wrangler.toml` for that deploy
+- uploads OAuth secrets to the Pages project when these GitHub secrets are set:
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `NAVER_CLIENT_ID`
+  - `NAVER_CLIENT_SECRET`
+
+OAuth callback URLs to register with providers:
+
+- `https://riftbound.win/api/auth/google/callback`
+- `https://riftbound.kr/api/auth/google/callback`
+- `https://riftbound.win/api/auth/naver/callback`
+- `https://riftbound.kr/api/auth/naver/callback`
+
+Without Pages bindings, the local Rust server still serves the UI. Community posts and pasted media fall back to browser-local storage, while auth/profile API calls show signed-out or setup-missing states.
+
+## Deck Rules
+
+The deck editor validates Constructed deck size from Riftbound Tournament Rules 402.1: exactly 40 Main Deck cards including chosen champion, 1 Legend, 12 runes, and 3 battlefields with unique names.
 
 ## Future Network Play
 

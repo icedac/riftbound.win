@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Riftbound Profile</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="page-profile">
+    <header class="site-header">
+      <a class="site-brand" href="/">Riftbound.win</a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/cards/">Cards</a>
+        <a href="/decks/">Decks</a>
+        <a href="/community/">Community</a>
+      </nav>
+      <div class="site-actions" data-auth-shell></div>
+    </header>
+
+    <main class="profile-frame">
+      <section class="profile-panel">
+        <div class="page-head compact">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h1>Profile</h1>
+          </div>
+          <p id="profileStatus" class="profile-status">Loading profile...</p>
+        </div>
+
+        <form id="profileForm" class="profile-form">
+          <div class="avatar-uploader">
+            <div class="avatar-preview"><img id="avatarPreview" alt="" /></div>
+            <label>
+              Profile image
+              <input id="avatarInput" type="file" accept="image/*" />
+            </label>
+          </div>
+          <label>
+            Display name
+            <input id="displayName" maxlength="40" autocomplete="nickname" />
+          </label>
+          <label>
+            Bio
+            <textarea id="bio" rows="5" maxlength="240"></textarea>
+          </label>
+          <button type="submit">Save profile</button>
+        </form>
+      </section>
+
+      <aside class="profile-panel">
+        <h2>Linked logins</h2>
+        <div id="providerList" class="provider-list"></div>
+      </aside>
+    </main>
+
+    <script src="/profile.js" type="module"></script>
+    <script src="/auth.js" type="module"></script>
+  </body>
+</html>

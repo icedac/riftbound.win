@@ -20,6 +20,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Prepare Pages backend bindings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: |
+          python3 scripts/prepare_cloudflare_pages_backend.py
+
       - name: Deploy static catalog
         uses: cloudflare/wrangler-action@v3
         with:
@@ -31,7 +42,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_DOMAINS: riftbound.win,randomgame.kr
+          CLOUDFLARE_PAGES_DOMAINS: riftbound.win,riftbound.kr,randomgame.kr
           CLOUDFLARE_OPTIONAL_PAGES_DOMAINS: randomgame.kr
         run: |
           python3 scripts/ensure_cloudflare_pages_domain.py

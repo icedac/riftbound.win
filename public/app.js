@@ -3,6 +3,7 @@ import { appendFoilLayers, bindFoilSurface } from "/foil.js";
 const state = {
   cards: [],
   filtered: [],
+  visibleCount: 96,
   search: "",
   color: "",
   type: "",
@@ -13,6 +14,8 @@ const state = {
   backOnly: false,
   hideBanned: true,
 };
+
+const PAGE_SIZE = 96;
 
 const els = {
   summary: document.querySelector("#summary"),
@@ -27,6 +30,7 @@ const els = {
   backOnly: document.querySelector("#backOnly"),
   hideBanned: document.querySelector("#hideBanned"),
   reset: document.querySelector("#reset"),
+  loadMore: document.querySelector("#loadMore"),
   detail: document.querySelector("#detail"),
   detailBody: document.querySelector("#detailBody"),
   closeDetail: document.querySelector("#closeDetail"),
@@ -62,27 +66,35 @@ function buildFilters() {
 function bindEvents() {
   els.search.addEventListener("input", () => {
     state.search = els.search.value.trim().toLowerCase();
+    state.visibleCount = PAGE_SIZE;
     applyFilters();
   });
 
   for (const [key] of selects) {
     els[key].addEventListener("change", () => {
       state[key] = els[key].value;
+      state.visibleCount = PAGE_SIZE;
       applyFilters();
     });
   }
 
   els.backOnly.addEventListener("change", () => {
     state.backOnly = els.backOnly.checked;
+    state.visibleCount = PAGE_SIZE;
     applyFilters();
   });
 
   els.hideBanned.addEventListener("change", () => {
     state.hideBanned = els.hideBanned.checked;
+    state.visibleCount = PAGE_SIZE;
     applyFilters();
   });
 
   els.reset.addEventListener("click", resetFilters);
+  els.loadMore.addEventListener("click", () => {
+    state.visibleCount += PAGE_SIZE;
+    render();
+  });
   els.closeDetail.addEventListener("click", () => els.detail.close());
   els.detail.addEventListener("click", (event) => {
     if (event.target === els.detail) els.detail.close();
@@ -106,17 +118,21 @@ function applyFilters() {
 }
 
 function render() {
-  els.summary.textContent = `${state.filtered.length.toLocaleString()} / ${state.cards.length.toLocaleString()} cards`;
+  const visibleCards = state.filtered.slice(0, state.visibleCount);
+  els.summary.textContent = `${visibleCards.length.toLocaleString()} shown / ${state.filtered.length.toLocaleString()} filtered / ${state.cards.length.toLocaleString()} cards`;
   if (state.filtered.length === 0) {
     els.grid.replaceChildren(emptyState());
+    els.loadMore.hidden = true;
     return;
   }
 
   const fragment = document.createDocumentFragment();
-  for (const card of state.filtered) {
+  for (const card of visibleCards) {
     fragment.append(cardNode(card));
   }
   els.grid.replaceChildren(fragment);
+  els.loadMore.hidden = visibleCards.length >= state.filtered.length;
+  els.loadMore.textContent = `Load more (${Math.min(PAGE_SIZE, state.filtered.length - visibleCards.length)} more)`;
 }
 
 function cardNode(card) {
@@ -126,6 +142,7 @@ function cardNode(card) {
     card.image_orientation === "landscape" ? "is-landscape-card" : "",
     card.has_foil ? "is-foil-card" : "",
     isPremiumFoil(card) ? "is-premium-foil" : "",
+    isFoilOnly(card) ? "is-foil-only" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -159,6 +176,7 @@ function cardNode(card) {
   const body = div("card-body");
   const title = div("card-title");
   const name = document.createElement("strong");
+  if (isFoilOnly(card)) name.className = "foil-only-name";
   name.textContent = card.name;
   title.append(name);
   if (card.cost) title.append(span("cost", card.cost));
@@ -178,8 +196,8 @@ function cardNode(card) {
 
   const footer = div("card-footer");
   footer.append(span("card-id", card.id));
-  const price = formatPrice(card.price);
-  if (price) footer.append(span("card-price", price));
+  const price = displayPrice(card);
+  if (price) footer.append(span(`card-price ${price.isFoil ? "foil-price" : ""}`, price.label));
 
   body.append(title, meta, chips, footer);
   button.append(imageWrap, body);
@@ -229,6 +247,7 @@ function openDetail(card) {
 
   const copy = div("detail-copy");
   const title = document.createElement("h2");
+  if (isFoilOnly(card)) title.className = "foil-only-name";
   title.textContent = card.name;
   const meta = div("meta");
   for (const value of [card.id, card.card_type, card.set_name, card.rarity].filter(Boolean)) {
@@ -271,6 +290,7 @@ function resetFilters() {
   state.tag = "";
   state.backOnly = false;
   state.hideBanned = true;
+  state.visibleCount = PAGE_SIZE;
   els.search.value = "";
   for (const [key] of selects) els[key].value = "";
   els.backOnly.checked = false;
@@ -284,6 +304,7 @@ function readInitialSearch() {
   if (!query) return;
   state.search = query.trim().toLowerCase();
   els.search.value = query.trim();
+  state.visibleCount = PAGE_SIZE;
 }
 
 function uniqueValues(values) {
@@ -379,6 +400,19 @@ function isPremiumFoil(card) {
     card.has_foil &&
       (!card.has_normal || card.promo || ["Showcase", "Epic"].includes(card.rarity))
   );
+}
+
+function isFoilOnly(card) {
+  return Boolean(card.has_foil && !card.has_normal);
+}
+
+function displayPrice(card) {
+  if (isFoilOnly(card)) {
+    const foil = formatPrice(card.foil_price);
+    return foil ? { label: `Foil ${foil}`, isFoil: true } : null;
+  }
+  const normal = formatPrice(card.price);
+  return normal ? { label: normal, isFoil: false } : null;
 }
 
 function paragraph(text) {

@@ -1,4 +1,4 @@
-const STORAGE_KEY = "riftbound.community.v1";
+const STORAGE_KEY = "riftbound.community.v2";
 const boardMeta = {
   free: "자유 게시판",
   deck: "덱 토론",
@@ -9,11 +9,12 @@ const seedPosts = [
   {
     id: newId(),
     board: "notice",
-    title: "Riftbound Vault 임시 BBS",
-    body: "현재 글은 브라우저 localStorage에 저장됩니다. 배포 후에도 서버형 게시판으로 교체하기 쉬운 프레임입니다.",
+    title: "Riftbound.win BBS",
+    body: "이미지와 영상을 붙여넣어 올릴 수 있는 커뮤니티 보드입니다. 서버 API가 없으면 현재 브라우저에만 임시 저장됩니다.",
     votes: 18,
     comments: 2,
     createdAt: Date.now() - 1000 * 60 * 60 * 8,
+    media: [],
   },
   {
     id: newId(),
@@ -23,6 +24,7 @@ const seedPosts = [
     votes: 11,
     comments: 6,
     createdAt: Date.now() - 1000 * 60 * 47,
+    media: [],
   },
   {
     id: newId(),
@@ -32,12 +34,15 @@ const seedPosts = [
     votes: 7,
     comments: 3,
     createdAt: Date.now() - 1000 * 60 * 14,
+    media: [],
   },
 ];
 
 const state = {
   board: "free",
   posts: [],
+  pendingMedia: [],
+  apiReady: false,
 };
 
 const els = {
@@ -47,61 +52,161 @@ const els = {
   form: document.querySelector("#postForm"),
   postTitle: document.querySelector("#postTitle"),
   postBody: document.querySelector("#postBody"),
+  postMedia: document.querySelector("#postMedia"),
+  mediaDrop: document.querySelector("#mediaDrop"),
+  mediaPreview: document.querySelector("#mediaPreview"),
   postList: document.querySelector("#postList"),
   counts: document.querySelector("#boardCounts"),
 };
 
-function boot() {
+boot();
+
+async function boot() {
   restorePosts();
   bindEvents();
+  await loadRemotePosts();
   render();
 }
 
 function bindEvents() {
   els.tabs.forEach((tab) => {
-    tab.addEventListener("click", () => {
+    tab.addEventListener("click", async () => {
       state.board = tab.dataset.board;
+      await loadRemotePosts();
       render();
     });
   });
 
-  els.form.addEventListener("submit", (event) => {
+  els.form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const title = els.postTitle.value.trim();
     if (!title) return;
-    state.posts.unshift({
-      id: newId(),
-      board: state.board,
-      title,
-      body: els.postBody.value.trim(),
-      votes: 1,
-      comments: 0,
-      createdAt: Date.now(),
-    });
-    els.postTitle.value = "";
-    els.postBody.value = "";
-    persistPosts();
-    render();
+    await createPost(title, els.postBody.value.trim());
   });
 
-  els.postList.addEventListener("click", (event) => {
+  els.postList.addEventListener("click", async (event) => {
     const button = event.target.closest("[data-vote]");
     if (!button) return;
-    const post = state.posts.find((item) => item.id === button.dataset.vote);
-    if (!post) return;
-    post.votes += Number(button.dataset.amount || 0);
-    persistPosts();
-    renderPosts();
-    renderCounts();
+    await votePost(button.dataset.vote, Number(button.dataset.amount || 0));
   });
+
+  els.postMedia.addEventListener("change", () => addFiles([...els.postMedia.files]));
+  els.mediaDrop.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    els.mediaDrop.classList.add("dragging");
+  });
+  els.mediaDrop.addEventListener("dragleave", () => els.mediaDrop.classList.remove("dragging"));
+  els.mediaDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    els.mediaDrop.classList.remove("dragging");
+    addFiles([...event.dataTransfer.files]);
+  });
+  els.form.addEventListener("paste", (event) => {
+    const files = [...event.clipboardData.files].filter((file) => /^image\/|^video\//.test(file.type));
+    if (files.length > 0) {
+      event.preventDefault();
+      addFiles(files);
+    }
+  });
+}
+
+async function loadRemotePosts() {
+  try {
+    const response = await fetch(`/api/posts?board=${encodeURIComponent(state.board)}`, { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error(`Posts API ${response.status}`);
+    const data = await response.json();
+    state.apiReady = true;
+    state.posts = data.posts.map(normalizeRemotePost);
+  } catch {
+    state.apiReady = false;
+  }
+}
+
+async function createPost(title, body) {
+  if (state.apiReady) {
+    const form = new FormData();
+    form.append("board", state.board);
+    form.append("title", title);
+    form.append("body", body);
+    for (const item of state.pendingMedia) form.append("media", item.file, item.file.name || "media");
+    const response = await fetch("/api/posts", { method: "POST", body: form });
+    if (response.ok) {
+      await loadRemotePosts();
+      resetComposer();
+      render();
+      return;
+    }
+    state.apiReady = false;
+  }
+
+  state.posts.unshift({
+    id: newId(),
+    board: state.board,
+    title,
+    body,
+    votes: 1,
+    comments: 0,
+    createdAt: Date.now(),
+    media: state.pendingMedia.map((item) => ({
+      id: newId(),
+      url: item.url,
+      type: item.file.type.startsWith("video/") ? "video" : "image",
+      mime_type: item.file.type,
+    })),
+  });
+  persistPosts();
+  resetComposer();
+  render();
+}
+
+async function votePost(id, amount) {
+  if (state.apiReady) {
+    const response = await fetch(`/api/posts/${encodeURIComponent(id)}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount }),
+    });
+    if (response.ok) {
+      await loadRemotePosts();
+      renderPosts();
+      renderCounts();
+      return;
+    }
+    state.apiReady = false;
+  }
+
+  const post = state.posts.find((item) => item.id === id);
+  if (!post) return;
+  post.votes += amount;
+  persistPosts();
+  renderPosts();
+  renderCounts();
+}
+
+function addFiles(files) {
+  const accepted = files.filter((file) => /^image\/|^video\//.test(file.type)).slice(0, 6);
+  for (const file of accepted) {
+    state.pendingMedia.push({
+      file,
+      url: URL.createObjectURL(file),
+    });
+  }
+  renderMediaPreview();
 }
 
 function render() {
   els.tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.board === state.board));
   els.title.textContent = state.board;
-  els.summary.textContent = boardMeta[state.board];
+  els.summary.textContent = state.apiReady ? `${boardMeta[state.board]} · live` : `${boardMeta[state.board]} · local`;
   renderPosts();
   renderCounts();
+  renderMediaPreview();
+}
+
+function renderMediaPreview() {
+  const fragment = document.createDocumentFragment();
+  for (const item of state.pendingMedia) fragment.append(mediaNode(item.url, item.file.type));
+  els.mediaPreview.replaceChildren(fragment);
 }
 
 function renderPosts() {
@@ -136,9 +241,34 @@ function postNode(post) {
   meta.className = "post-meta";
   body.append(text("h2", post.title), meta);
   if (post.body) body.append(text("p", post.body));
+  if (post.media?.length) body.append(postMedia(post.media));
 
   article.append(votes, body);
   return article;
+}
+
+function postMedia(media) {
+  const wrap = document.createElement("div");
+  wrap.className = "post-media";
+  for (const item of media) wrap.append(mediaNode(item.url, item.mime_type || item.type));
+  return wrap;
+}
+
+function mediaNode(url, mimeType) {
+  const shell = document.createElement("div");
+  shell.className = "media-preview-item";
+  const isVideo = String(mimeType || "").startsWith("video") || /\.(mp4|webm|mov)$/i.test(url);
+  const node = document.createElement(isVideo ? "video" : "img");
+  node.src = url;
+  if (isVideo) {
+    node.controls = true;
+    node.playsInline = true;
+  } else {
+    node.alt = "";
+    node.loading = "lazy";
+  }
+  shell.append(node);
+  return shell;
 }
 
 function renderCounts() {
@@ -150,6 +280,27 @@ function renderCounts() {
     fragment.append(item);
   }
   els.counts.replaceChildren(fragment);
+}
+
+function resetComposer() {
+  els.postTitle.value = "";
+  els.postBody.value = "";
+  els.postMedia.value = "";
+  state.pendingMedia = [];
+  renderMediaPreview();
+}
+
+function normalizeRemotePost(post) {
+  return {
+    id: post.id,
+    board: post.board,
+    title: post.title,
+    body: post.body || "",
+    votes: Number(post.votes || 0),
+    comments: Number(post.comments || 0),
+    createdAt: Number(post.created_at || Date.now()),
+    media: post.media || [],
+  };
 }
 
 function voteButton(label, id, amount) {
@@ -176,7 +327,12 @@ function restorePosts() {
 }
 
 function persistPosts() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.posts));
+  try {
+    const serializable = state.posts.map((post) => ({ ...post, media: (post.media || []).filter((item) => !item.url.startsWith("blob:")) }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
+  } catch {
+    localStorage.removeItem(STORAGE_KEY);
+  }
 }
 
 function relativeTime(value) {
@@ -191,5 +347,3 @@ function newId() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
-
-boot();

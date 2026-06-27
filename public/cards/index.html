@@ -8,12 +8,13 @@
   </head>
   <body class="page-cards">
     <header class="site-header">
-      <a class="site-brand" href="/">Riftbound Vault</a>
+      <a class="site-brand" href="/">Riftbound.win</a>
       <nav class="site-nav" aria-label="Primary">
         <a class="active" href="/cards/">Cards</a>
         <a href="/decks/">Decks</a>
         <a href="/community/">Community</a>
       </nav>
+      <div class="site-actions" data-auth-shell></div>
     </header>
 
     <main class="layout">
@@ -67,6 +68,7 @@
 
       <section class="results" aria-live="polite">
         <div id="grid" class="grid"></div>
+        <button id="loadMore" class="load-more" type="button" hidden>Load more</button>
       </section>
     </main>
 
@@ -76,5 +78,7 @@
     </dialog>
 
     <script src="/app.js" type="module"></script>
+    <script src="/auth.js" type="module"></script>
+    <script src="/perf.js" type="module"></script>
   </body>
 </html>

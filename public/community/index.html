@@ -8,12 +8,13 @@
   </head>
   <body class="page-community">
     <header class="site-header">
-      <a class="site-brand" href="/">Riftbound Vault</a>
+      <a class="site-brand" href="/">Riftbound.win</a>
       <nav class="site-nav" aria-label="Primary">
         <a href="/cards/">Cards</a>
         <a href="/decks/">Decks</a>
         <a class="active" href="/community/">Community</a>
       </nav>
+      <div class="site-actions" data-auth-shell></div>
     </header>
 
     <main class="community-frame">
@@ -35,6 +36,11 @@
         <form id="postForm" class="post-composer">
           <input id="postTitle" required maxlength="90" placeholder="Title" autocomplete="off" />
           <textarea id="postBody" rows="4" maxlength="800" placeholder="Text"></textarea>
+          <label id="mediaDrop" class="media-drop">
+            <span>Paste, drop, or choose images/videos</span>
+            <input id="postMedia" type="file" accept="image/*,video/*" multiple />
+            <div id="mediaPreview" class="media-preview"></div>
+          </label>
           <button type="submit">Post</button>
         </form>
 
@@ -49,5 +55,6 @@
     </main>
 
     <script src="/community.js" type="module"></script>
+    <script src="/auth.js" type="module"></script>
   </body>
 </html>

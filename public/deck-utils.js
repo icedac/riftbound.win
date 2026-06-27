@@ -103,6 +103,80 @@ export function summarizeDeck(entries = [], cardsOrIndex = []) {
   return summary;
 }
 
+export function sectionForCard(card) {
+  const type = String(card?.card_type ?? "").toLowerCase();
+  if (type === "rune") return "runes";
+  if (type === "legend") return "legends";
+  if (type === "battlefield") return "battlefields";
+  return "main";
+}
+
+export function buildDeckSections(entries = [], cardsOrIndex = []) {
+  const index = ensureIndex(cardsOrIndex);
+  const sections = {
+    main: [],
+    runes: [],
+    legends: [],
+    battlefields: [],
+    unknown: [],
+  };
+
+  for (const entry of entries) {
+    const id = normalizeCardId(entry?.id);
+    const quantity = Number(entry?.quantity) || 0;
+    if (!id || quantity <= 0) continue;
+    const card = index.byId.get(id) ?? entry.card;
+    const section = card ? sectionForCard(card) : "unknown";
+    sections[section].push({ id, quantity, card });
+  }
+
+  return sections;
+}
+
+export function flattenDeckSections(sections = {}) {
+  return ["main", "runes", "legends", "battlefields", "unknown"].flatMap((section) =>
+    (sections[section] ?? []).map((entry) => ({ ...entry, section }))
+  );
+}
+
+export function validateRiftboundDeck(sections = {}) {
+  const counts = {
+    main: countSection(sections.main),
+    runes: countSection(sections.runes),
+    legends: countSection(sections.legends),
+    battlefields: countSection(sections.battlefields),
+  };
+  const errors = [];
+  const warnings = [];
+
+  if (counts.main !== 40) errors.push(`Main deck must be exactly 40 cards. Current: ${counts.main}.`);
+  if (counts.runes !== 12) errors.push(`Rune deck must be exactly 12 runes. Current: ${counts.runes}.`);
+  if (counts.legends !== 1) errors.push(`Choose exactly 1 legend. Current: ${counts.legends}.`);
+  if (counts.battlefields !== 3) errors.push(`Choose exactly 3 battlefields. Current: ${counts.battlefields}.`);
+
+  const uniqueBattlefields = new Set((sections.battlefields ?? []).map((entry) => entry.id)).size;
+  if (counts.battlefields === 3 && uniqueBattlefields < 3) {
+    warnings.push("Tournament rules use 3 unique battlefields.");
+  }
+
+  return { counts, errors, warnings, ok: errors.length === 0 };
+}
+
+export function drawTestHand(sections = {}, cardsOrIndex = [], options = {}) {
+  const index = ensureIndex(cardsOrIndex);
+  const seed = Number(options.seed ?? Date.now());
+  const handSize = Number(options.handSize ?? 4);
+  const runeChannels = Number(options.runeChannels ?? 2);
+  const mainPool = expandEntries(sections.main ?? [], index);
+  const runePool = expandEntries(sections.runes ?? [], index);
+
+  return {
+    seed,
+    hand: seededShuffle(mainPool, seed).slice(0, handSize),
+    runes: seededShuffle(runePool, seed + 97).slice(0, runeChannels),
+  };
+}
+
 function ensureIndex(cardsOrIndex) {
   if (cardsOrIndex?.byId && cardsOrIndex?.idsByLength) return cardsOrIndex;
   return createCardIndex(cardsOrIndex);
@@ -144,6 +218,32 @@ function findCardId(cardText, index) {
 
 function addCount(target, key, quantity) {
   target[key] = (target[key] || 0) + quantity;
+}
+
+function countSection(entries = []) {
+  return entries.reduce((total, entry) => total + (Number(entry.quantity) || 0), 0);
+}
+
+function expandEntries(entries, index) {
+  const expanded = [];
+  for (const entry of entries) {
+    const quantity = Number(entry.quantity) || 0;
+    const id = normalizeCardId(entry.id);
+    const card = index.byId.get(id) ?? entry.card;
+    for (let i = 0; i < quantity; i += 1) expanded.push({ id, card });
+  }
+  return expanded;
+}
+
+function seededShuffle(items, seed) {
+  const copy = [...items];
+  let state = Math.max(1, Math.floor(seed) % 2147483647);
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    state = (state * 48271) % 2147483647;
+    const j = state % (i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
 }
 
 function normalizeName(value) {

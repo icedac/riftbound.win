@@ -8,16 +8,17 @@
   </head>
   <body class="page-decks">
     <header class="site-header">
-      <a class="site-brand" href="/">Riftbound Vault</a>
+      <a class="site-brand" href="/">Riftbound.win</a>
       <nav class="site-nav" aria-label="Primary">
         <a href="/cards/">Cards</a>
         <a class="active" href="/decks/">Decks</a>
         <a href="/community/">Community</a>
       </nav>
+      <div class="site-actions" data-auth-shell></div>
     </header>
 
     <main class="deck-workspace">
-      <section class="deck-browser" aria-label="Card picker">
+      <section class="deck-board" aria-label="Deck list">
         <div class="page-head compact">
           <div>
             <p class="eyebrow">Deck Lab</p>
@@ -26,6 +27,40 @@
           <p id="deckSummary">Loading cards...</p>
         </div>
 
+        <div id="deckStats" class="deck-stats"></div>
+        <div id="validationMessages" class="deck-validation" aria-live="polite"></div>
+        <div id="deckSections" class="deck-sections"></div>
+
+        <div class="deck-tools">
+          <div class="deck-io">
+            <label>
+              Import
+              <textarea id="importText" rows="6" spellcheck="false" placeholder="3x OGN-111&#10;2x OGN-001&#10;12x OGN-042"></textarea>
+            </label>
+            <button id="importDeck" type="button">Import</button>
+            <div id="importWarnings" class="warnings" aria-live="polite"></div>
+          </div>
+
+          <div class="deck-io">
+            <label>
+              Export
+              <textarea id="exportText" rows="6" spellcheck="false" readonly></textarea>
+            </label>
+            <button id="exportDeck" type="button">Export</button>
+            <button id="clearDeck" class="ghost-button" type="button">Clear</button>
+          </div>
+
+          <div class="draw-panel">
+            <div class="draw-actions">
+              <h2>Test Draw</h2>
+              <button id="drawTest" type="button">Draw</button>
+            </div>
+            <div id="drawOutput" class="draw-output"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="deck-browser" aria-label="Card picker">
         <div class="deck-filters">
           <input id="deckSearch" type="search" placeholder="Search card name, ID, text" autocomplete="off" />
           <select id="deckColor" aria-label="Color filter"></select>
@@ -35,31 +70,13 @@
         <div id="deckResults" class="deck-results" aria-live="polite"></div>
       </section>
 
-      <aside class="deck-panel" aria-label="Current deck">
-        <div class="deck-panel-head">
-          <h2>Current Deck</h2>
-          <button id="clearDeck" class="ghost-button" type="button">Clear</button>
-        </div>
-
-        <div id="deckStats" class="deck-stats"></div>
-        <div id="deckList" class="deck-list"></div>
-
-        <div class="deck-io">
-          <label>
-            Import
-            <textarea id="importText" rows="7" spellcheck="false" placeholder="3x OGN-111&#10;2x OGN-001&#10;1x SFD-001"></textarea>
-          </label>
-          <button id="importDeck" type="button">Import</button>
-          <div id="importWarnings" class="warnings" aria-live="polite"></div>
-          <label>
-            Export
-            <textarea id="exportText" rows="7" spellcheck="false" readonly></textarea>
-          </label>
-          <button id="exportDeck" type="button">Export</button>
-        </div>
+      <aside class="card-inspector" aria-label="Card detail">
+        <div id="cardPreview" class="card-preview"></div>
       </aside>
     </main>
 
     <script src="/decks.js" type="module"></script>
+    <script src="/auth.js" type="module"></script>
+    <script src="/perf.js" type="module"></script>
   </body>
 </html>
