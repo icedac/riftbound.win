@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Riftbound Card Library</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <h1>Riftbound Cards</h1>
+        <p id="summary">Loading cards...</p>
+      </div>
+      <button id="reset" type="button">Reset</button>
+    </header>
+
+    <main class="layout">
+      <section class="filters" aria-label="Card filters">
+        <label>
+          Search
+          <input id="search" type="search" placeholder="Name, text, tag" autocomplete="off" />
+        </label>
+        <label>
+          Color
+          <select id="color"></select>
+        </label>
+        <label>
+          Type
+          <select id="type"></select>
+        </label>
+        <label>
+          Set
+          <select id="set"></select>
+        </label>
+        <label>
+          Rarity
+          <select id="rarity"></select>
+        </label>
+        <label>
+          Cost
+          <select id="cost"></select>
+        </label>
+        <label>
+          Tag
+          <select id="tag"></select>
+        </label>
+        <label class="check">
+          <input id="backOnly" type="checkbox" />
+          Has back image
+        </label>
+        <label class="check">
+          <input id="hideBanned" type="checkbox" checked />
+          Hide banned
+        </label>
+      </section>
+
+      <section class="results" aria-live="polite">
+        <div id="grid" class="grid"></div>
+      </section>
+    </main>
+
+    <dialog id="detail">
+      <button id="closeDetail" class="icon-button" type="button" aria-label="Close">x</button>
+      <div id="detailBody"></div>
+    </dialog>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
