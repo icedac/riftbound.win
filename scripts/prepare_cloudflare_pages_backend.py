@@ -123,9 +123,19 @@ def toml_string(value):
 
 
 def main():
-    database_id = d1_database_id()
-    ensure_r2_bucket()
-    write_bindings(database_id)
+    try:
+        database_id = d1_database_id()
+        ensure_r2_bucket()
+        write_bindings(database_id)
+    except SystemExit as error:
+        if os.environ.get("RIFTBOUND_BACKEND_REQUIRED") == "1":
+            raise
+        print(
+            "::warning::Skipping DB/MEDIA binding setup because the Cloudflare token "
+            "does not have the required D1/R2 permissions. Static Pages deploy will continue."
+        )
+        if isinstance(error.code, int) and error.code not in (0, None):
+            print(f"Backend setup skipped after command exit code {error.code}.")
     upload_oauth_secrets()
 
 
