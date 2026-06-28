@@ -6,6 +6,7 @@ const pages = [
   "public/index.html",
   "public/cards/index.html",
   "public/decks/index.html",
+  "public/playground/index.html",
   "public/community/index.html",
   "public/profile/index.html",
 ];

@@ -1,0 +1,75 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  appendTableEvent,
+  createPlaygroundTable,
+  joinPlaygroundTable,
+  replayTableEvents,
+  updateVoicePresence,
+} from "../public/playground-state.js";
+
+const host = { id: "user-host", display_name: "Host" };
+const guest = { id: "user-guest", display_name: "Guest" };
+
+function savedDeck(id = "deck-1") {
+  return {
+    id,
+    name: "Ahri Tempo",
+    deck_json: {
+      entries: [
+        { id: "OGN-001", quantity: 5, section: "main" },
+        { id: "OGN-042", quantity: 2, section: "runes" },
+      ],
+    },
+  };
+}
+
+test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
+  const deck = savedDeck();
+  const table = createPlaygroundTable({ id: "table-1", savedDeck: deck, user: host, now: 1000 });
+  deck.deck_json.entries[0].quantity = 99;
+
+  assert.equal(table.id, "table-1");
+  assert.equal(table.status, "waiting");
+  assert.equal(table.seats[0].user_id, "user-host");
+  assert.equal(table.seats[0].deck_name, "Ahri Tempo");
+  assert.equal(table.seats[0].deck_snapshot.entries[0].quantity, 5);
+  assert.deepEqual(table.seats[0].zones.hand, []);
+  assert.equal(table.seats[0].zones.main_deck.length, 5);
+  assert.equal(table.seats[0].zones.rune_deck.length, 2);
+});
+
+test("joined tables append ordered events, preserve chat and voice state, and replay the log", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
+
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 }, now: 1300 });
+  table = appendTableEvent(table, { actorId: guest.id, type: "chat.message", payload: { text: "ready" }, now: 1400 });
+  table = updateVoicePresence(table, { userId: guest.id, muted: false, talking: true, now: 1500 });
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 1600 });
+  table = appendTableEvent(table, { actorId: guest.id, type: "result.propose", payload: { result: "host-win" }, now: 1700 });
+
+  assert.equal(table.status, "active");
+  assert.deepEqual(table.events.map((event) => event.sequence), [1, 2, 3, 4, 5, 6]);
+  assert.equal(table.seats[0].zones.hand.length, 2);
+  assert.equal(table.seats[0].zones.main_deck.length, 3);
+  assert.equal(table.chat[0].text, "ready");
+  assert.equal(table.voice[guest.id].talking, true);
+  assert.equal(table.turn_player_id, guest.id);
+  assert.equal(table.result.proposals[guest.id], "host-win");
+
+  const replay = replayTableEvents(table.events);
+  assert.deepEqual(
+    replay.map((event) => [event.sequence, event.type]),
+    [
+      [1, "game.start"],
+      [2, "card.move"],
+      [3, "chat.message"],
+      [4, "voice.presence"],
+      [5, "turn.pass"],
+      [6, "result.propose"],
+    ]
+  );
+});

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Riftbound.kr Playground</title>
+    <link rel="stylesheet" href="/styles.css?v=20260628-playground1" />
+  </head>
+  <body class="page-playground">
+    <header class="site-header">
+      <a class="site-brand" href="/" data-brand>Riftbound.kr</a>
+      <nav class="site-nav" aria-label="Primary">
+        <a href="/cards/">Cards</a>
+        <a href="/decks/">Decks</a>
+        <a class="active" href="/playground/">Playground</a>
+        <a href="/community/">Community</a>
+      </nav>
+      <div class="site-actions" data-auth-shell></div>
+    </header>
+
+    <main class="playground-shell">
+      <section id="playgroundLobby" class="playground-panel playground-lobby" aria-label="Playground lobby">
+        <div class="page-head compact">
+          <div>
+            <p class="eyebrow">Playground</p>
+            <h1>Tables</h1>
+          </div>
+          <p id="playgroundStatus">Loading profile...</p>
+        </div>
+
+        <div class="playground-toolbar">
+          <label>
+            Saved deck
+            <select id="playgroundDecks"></select>
+          </label>
+          <button id="createTable" type="button">Open Table</button>
+          <button id="joinTable" class="ghost-button" type="button">Join Selected</button>
+        </div>
+
+        <div id="tableList" class="table-list" aria-live="polite"></div>
+      </section>
+
+      <section id="playgroundTable" class="playground-panel playground-table" aria-label="Game table">
+        <div class="table-topline">
+          <div>
+            <p class="eyebrow">Table</p>
+            <h2 id="tableTitle">No table selected</h2>
+          </div>
+          <div class="table-actions">
+            <button id="startGame" type="button">Start</button>
+            <button id="drawOpening" type="button">Draw Hand</button>
+            <button id="drawRune" type="button">Draw Rune</button>
+            <button id="moveBattlefield" type="button">Play Card</button>
+            <button id="passTurn" type="button">Pass</button>
+          </div>
+        </div>
+
+        <div id="tableZones" class="table-zones"></div>
+      </section>
+
+      <aside class="playground-panel playground-side" aria-label="Communication and log">
+        <section>
+          <h2>Event Log</h2>
+          <div id="eventLog" class="event-log" aria-live="polite"></div>
+        </section>
+
+        <section>
+          <h2>Chat</h2>
+          <div id="chatLog" class="chat-log" aria-live="polite"></div>
+          <form id="chatForm" class="chat-form">
+            <input id="chatInput" maxlength="240" placeholder="Message" autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </section>
+
+        <section id="voicePanel">
+          <h2>Voice</h2>
+          <div id="voiceStatus" class="voice-status">Mic idle</div>
+          <button id="toggleVoice" type="button">Enable Mic</button>
+        </section>
+
+        <section id="resultPanel">
+          <h2>Result</h2>
+          <select id="resultSelect">
+            <option value="">Select result</option>
+            <option value="host-win">Host win</option>
+            <option value="guest-win">Guest win</option>
+            <option value="draw">Draw</option>
+          </select>
+          <button id="submitResult" type="button">Record Result</button>
+        </section>
+
+        <section id="replayPanel">
+          <h2>Replay</h2>
+          <button id="buildReplay" type="button">Build Replay</button>
+          <div id="replayLog" class="replay-log"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/brand.js?v=20260628-fixedbrand1" type="module"></script>
+    <script src="/playground.js?v=20260628-playground1" type="module"></script>
+    <script src="/auth.js?v=20260628-readiness1" type="module"></script>
+    <script src="/perf.js?v=20260628-perf2" type="module"></script>
+  </body>
+</html>

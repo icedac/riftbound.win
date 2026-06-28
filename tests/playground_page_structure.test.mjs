@@ -1,0 +1,40 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const playgroundHtmlPath = new URL("../public/playground/index.html", import.meta.url);
+
+test("public navigation exposes the Playground menu", async () => {
+  for (const path of [
+    "../public/index.html",
+    "../public/cards/index.html",
+    "../public/decks/index.html",
+    "../public/community/index.html",
+    "../public/profile/index.html",
+  ]) {
+    const html = await readFile(new URL(path, import.meta.url), "utf8");
+    assert.match(html, /href="\/playground\/">Playground<\/a>/, path);
+  }
+});
+
+test("playground page exposes lobby, deck picker, table, chat, voice, result, and replay surfaces", async () => {
+  const html = await readFile(playgroundHtmlPath, "utf8");
+
+  for (const required of [
+    'class="active" href="/playground/"',
+    'id="playgroundLobby"',
+    'id="playgroundDecks"',
+    'id="playgroundTable"',
+    'id="tableZones"',
+    'id="eventLog"',
+    'id="chatLog"',
+    'id="voicePanel"',
+    'id="resultPanel"',
+    'id="replayPanel"',
+    'src="/playground.js?v=',
+    'src="/auth.js?v=',
+    'src="/perf.js?v=',
+  ]) {
+    assert.match(html, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), required);
+  }
+});

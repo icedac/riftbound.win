@@ -12,6 +12,7 @@ ENTRYPOINTS = [
     "index.html",
     "cards/index.html",
     "decks/index.html",
+    "playground/index.html",
     "community/index.html",
     "profile/index.html",
 ]
