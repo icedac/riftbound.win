@@ -40,6 +40,22 @@ Cloudflare Pages should not need a Rust runtime at request time.
 
 The production package is uploaded with `wrangler pages deploy public` from GitHub Actions.
 
+For manual release, archival, or handoff packages, run:
+
+```bash
+python3 scripts/package_static_site.py --public-dir public --output-dir dist --name riftbound-static
+```
+
+The package command creates:
+
+- `dist/riftbound-static-<timestamp>.tar.gz`
+- `dist/riftbound-static-manifest.json`
+
+The archive contains `manifest.json` and the full `public/` tree. The manifest
+records required entrypoints, `_worker.js` presence, `cards.json` card count,
+card image count, and SHA-256 for every packaged file. Treat this manifest as
+the handoff contract for manual deploys and static package audits.
+
 ## Future Package Split
 
 When playground multiplayer starts, split by runtime boundary instead of by technology fashion:

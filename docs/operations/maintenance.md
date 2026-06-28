@@ -89,6 +89,12 @@ If deploy logs say MEDIA binding is pending R2 setup:
 ## Release Checklist
 
 - Tests pass locally.
+- Optional package archive is generated when handing off a static release:
+
+  ```bash
+  python3 scripts/package_static_site.py --public-dir public --output-dir dist --name riftbound-static
+  ```
+
 - `git status --short` only shows intended files before commit.
 - Commit message describes the user-visible or operational change.
 - Push to `main`.

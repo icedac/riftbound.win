@@ -32,6 +32,15 @@ The sync command writes:
 - `public/cards.json` for the browser UI
 - `public/images/cards/*.webp` for local card images
 
+To create a portable static package after sync:
+
+```bash
+python3 scripts/package_static_site.py --public-dir public --output-dir dist --name riftbound-static
+```
+
+The command writes a `.tar.gz` archive plus a manifest with entrypoint, Worker,
+card count, image count, file size, and SHA-256 checks.
+
 ## Cloudflare Pages
 
 The app is static at deployment time. Run `cargo run -- sync` before deploying so `public/cards.json` and `public/images/cards` are populated.
