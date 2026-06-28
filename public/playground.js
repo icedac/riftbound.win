@@ -1,6 +1,12 @@
 import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground16";
 import { playCardMovePayload } from "/playground-actions.js?v=20260628-playcard1";
 import { tableLobbySummary } from "/playground-lobby.js?v=20260628-lobby1";
+import {
+  currentTableFromList,
+  selectedTableIdAfterListLoad,
+  shouldFetchSelectedTable,
+  tableDetailUrl,
+} from "/playground-table-selection.js?v=20260629-reconnect1";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -227,9 +233,14 @@ async function loadTablesQuietly() {
 async function loadTables() {
   const data = await fetchJson(TABLES_API, { tables: [] });
   state.tables = Array.isArray(data.tables) ? data.tables : [];
-  if (!state.tables.some((table) => table.id === state.selectedTableId)) {
-    state.selectedTableId = state.tables[0]?.id || state.selectedTableId || "";
-  }
+  if (shouldFetchSelectedTable(state.tables, state.selectedTableId)) await loadSelectedTable();
+  state.selectedTableId = selectedTableIdAfterListLoad(state.tables, state.selectedTableId);
+}
+
+async function loadSelectedTable() {
+  if (!state.selectedTableId) return;
+  const data = await fetchJson(tableDetailUrl(state.selectedTableId, TABLES_API), {});
+  if (data.table) upsertTable(data.table);
 }
 
 async function createTable() {
@@ -561,15 +572,20 @@ function closePeerConnection() {
 
 function mergeTable(table) {
   if (!table?.id) return;
+  upsertTable(table);
+  state.selectedTableId = table.id;
+  render();
+  syncRealtime();
+}
+
+function upsertTable(table) {
+  if (!table?.id) return;
   const index = state.tables.findIndex((item) => item.id === table.id);
   if (index >= 0) {
     state.tables[index] = table;
   } else {
     state.tables.unshift(table);
   }
-  state.selectedTableId = table.id;
-  render();
-  syncRealtime();
 }
 
 function render() {
@@ -757,7 +773,7 @@ function renderReplayFrame() {
 }
 
 function currentTable() {
-  return state.tables.find((table) => table.id === state.selectedTableId) || state.tables[0] || null;
+  return currentTableFromList(state.tables, state.selectedTableId);
 }
 
 function currentSeat() {
