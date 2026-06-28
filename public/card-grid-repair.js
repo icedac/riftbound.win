@@ -24,6 +24,24 @@ export function shouldRecoverRenderedCardGrid({
   );
 }
 
+export function shouldResetStaleCardScroll({
+  hasHash = false,
+  scrollY = 0,
+  renderedCards = 0,
+  userScrollStarted = false,
+} = {}) {
+  if (
+    hasHash ||
+    userScrollStarted ||
+    Math.max(0, scrollY) <= 0 ||
+    Math.max(0, renderedCards) <= 0
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function shouldKeepCardGridRecoveryWatchdog({
   totalCards = 0,
   elapsedMs = 0,

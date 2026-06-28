@@ -77,6 +77,13 @@ test("cards app disables stale browser scroll restoration on catalog boot", asyn
   assert.match(source, /scrollTo\(0, 0\)/);
 });
 
+test("cards app recovers stale restored scroll positions after cards render", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /shouldResetStaleCardScroll/);
+  assert.match(source, /recoverStaleCardScroll\(\)/);
+});
+
 test("cards app eager-loads first visible card images", async () => {
   const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 

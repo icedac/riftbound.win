@@ -10,11 +10,13 @@ import {
   shouldKeepCardGridRecoveryWatchdog,
   shouldRecoverRenderedCardGrid,
   shouldRepairInitialCardGrid,
-} from "/card-grid-repair.js?v=20260628-cardswatch1";
+  shouldResetStaleCardScroll,
+} from "/card-grid-repair.js?v=20260628-scrollguard1";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-scrollrestore1";
 
 const GRID_RECOVERY_DELAYS = [0, 100, 350, 1000, 2000];
 const EAGER_IMAGE_COUNT = 18;
+const USER_SCROLL_KEYS = new Set(["ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp", " "]);
 
 const state = {
   cards: [],
@@ -34,6 +36,7 @@ const state = {
   initialGridRepairRan: false,
   gridRecoveryStartedAt: 0,
   gridRecoveryTimer: 0,
+  userScrollStarted: false,
 };
 
 const els = {
@@ -127,6 +130,10 @@ function bindEvents() {
   window.addEventListener("pageshow", recoverRestoredCardState);
   window.addEventListener("focus", recoverRestoredCardState);
   window.addEventListener("load", recoverRestoredCardState);
+  window.addEventListener("wheel", markUserScrollStarted, { passive: true });
+  window.addEventListener("touchmove", markUserScrollStarted, { passive: true });
+  window.addEventListener("pointerdown", markUserScrollStarted, { passive: true });
+  window.addEventListener("keydown", markUserScrollStarted);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) recoverRestoredCardState();
   });
@@ -196,6 +203,7 @@ function startGridRecoveryWatchdog() {
 
 function runGridRecoveryWatchdog() {
   recoverRestoredCardState();
+  recoverStaleCardScroll();
   const elapsedMs = now() - state.gridRecoveryStartedAt;
   if (
     !shouldKeepCardGridRecoveryWatchdog({
@@ -230,6 +238,30 @@ function recoverRestoredCardState() {
   syncFilterControls();
   if (result.clearedSearch) clearQueryParam("q");
   render();
+}
+
+function recoverStaleCardScroll() {
+  if (!els.grid) return;
+  const renderedCards = els.grid.querySelectorAll(".card").length;
+  const rect = els.grid.getBoundingClientRect();
+  if (
+    shouldResetStaleCardScroll({
+      hasHash: Boolean(window.location.hash),
+      scrollY: window.scrollY,
+      renderedCards,
+      gridTop: rect.top,
+      gridBottom: rect.bottom,
+      viewportHeight: window.innerHeight,
+      userScrollStarted: state.userScrollStarted,
+    })
+  ) {
+    window.scrollTo(0, 0);
+  }
+}
+
+function markUserScrollStarted(event) {
+  if (event?.type === "keydown" && !USER_SCROLL_KEYS.has(event.key)) return;
+  state.userScrollStarted = true;
 }
 
 function setupAutoPager() {
