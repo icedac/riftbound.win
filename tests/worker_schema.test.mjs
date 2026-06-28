@@ -66,6 +66,12 @@ test("worker initializes D1 schema with single prepared statements", async () =>
         },
       },
     },
+    media: {
+      store: "d1-inline",
+      max_upload_bytes: 1048576,
+      max_avatar_bytes: 1048576,
+      max_files_per_post: 6,
+    },
   });
   assert.ok(db.statements.some((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS users")));
   assert.ok(db.statements.every((sql) => !sql.includes(";\n")));
@@ -92,6 +98,29 @@ test("worker reports configured OAuth providers when secrets are present", async
   assert.deepEqual(body.auth.providers.naver.missing, []);
   assert.equal(body.auth.providers.google.callback_url, "https://riftbound.kr/api/auth/google/callback");
   assert.equal(body.auth.providers.naver.callback_url, "https://riftbound.kr/api/auth/naver/callback");
+});
+
+test("worker reports R2 media capability when MEDIA binding is configured", async () => {
+  const db = new FakeD1Database();
+  const request = new Request("https://riftbound.kr/api/me");
+
+  const response = await worker.fetch(request, {
+    DB: db,
+    MEDIA: {
+      get: async () => null,
+      put: async () => undefined,
+    },
+    ASSETS: { fetch: () => new Response("asset") },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.media, {
+    store: "r2",
+    max_upload_bytes: 26214400,
+    max_avatar_bytes: 2097152,
+    max_files_per_post: 6,
+  });
 });
 
 class BoundStatement {

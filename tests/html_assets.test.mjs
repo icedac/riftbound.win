@@ -44,6 +44,13 @@ test("cards app cache-busts its module imports", async () => {
   }
 });
 
+test("community app cache-busts media helper import", async () => {
+  const source = await readFile(new URL("../public/community.js", import.meta.url), "utf8");
+
+  assert.match(source, /from "\/community-media\.js\?v=[^"]+"/);
+  assert.doesNotMatch(source, /from "\/community-media\.js"/);
+});
+
 test("public page scripts are cache-busted", async () => {
   for (const path of pages) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");

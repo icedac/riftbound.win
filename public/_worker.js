@@ -44,11 +44,12 @@ async function handleApi(request, env, url) {
 
 async function meResponse(request, env) {
   const auth = authStatus(request, env);
-  if (!(await ensureSchema(env))) return json({ user: null, providers: [], configured: false, auth });
+  const media = mediaStatus(env);
+  if (!(await ensureSchema(env))) return json({ user: null, providers: [], configured: false, auth, media });
   const session = await currentSession(request, env);
-  if (!session) return json({ user: null, providers: [], configured: true, auth });
+  if (!session) return json({ user: null, providers: [], configured: true, auth, media });
   const providers = await providerRows(env, session.user.id);
-  return json({ user: publicUser(session.user), providers, configured: true, auth });
+  return json({ user: publicUser(session.user), providers, configured: true, auth, media });
 }
 
 async function updateProfile(request, env) {
@@ -325,6 +326,16 @@ function providerStatus(origin, provider, secrets) {
     start_url: `/api/auth/${provider}/start`,
     callback_url: `${origin}/api/auth/${provider}/callback`,
     missing,
+  };
+}
+
+function mediaStatus(env) {
+  const hasR2 = Boolean(env.MEDIA);
+  return {
+    store: hasR2 ? "r2" : "d1-inline",
+    max_upload_bytes: hasR2 ? MAX_MEDIA_BYTES : MAX_INLINE_MEDIA_BYTES,
+    max_avatar_bytes: hasR2 ? MAX_AVATAR_BYTES : MAX_INLINE_MEDIA_BYTES,
+    max_files_per_post: 6,
   };
 }
 

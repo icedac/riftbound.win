@@ -70,6 +70,10 @@ async fn local_api_reports_configured_signed_out_state() {
     assert_eq!(body["configured"], true);
     assert_eq!(body["user"], Value::Null);
     assert_eq!(body["providers"].as_array().unwrap().len(), 0);
+    assert_eq!(body["media"]["store"], "local-files");
+    assert_eq!(body["media"]["max_upload_bytes"], 25 * 1024 * 1024);
+    assert_eq!(body["media"]["max_avatar_bytes"], 2 * 1024 * 1024);
+    assert_eq!(body["media"]["max_files_per_post"], 6);
 }
 
 #[tokio::test]

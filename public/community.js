@@ -1,3 +1,5 @@
+import { filterAcceptedMediaFiles, mediaUploadConfig } from "/community-media.js?v=20260628-media";
+
 const STORAGE_KEY = "riftbound.community.v2";
 const boardMeta = {
   free: "자유 게시판",
@@ -43,6 +45,8 @@ const state = {
   posts: [],
   pendingMedia: [],
   apiReady: false,
+  mediaConfig: mediaUploadConfig(),
+  composerMessage: "",
 };
 
 const els = {
@@ -54,6 +58,7 @@ const els = {
   postBody: document.querySelector("#postBody"),
   postMedia: document.querySelector("#postMedia"),
   mediaDrop: document.querySelector("#mediaDrop"),
+  mediaStatus: document.querySelector("#mediaStatus"),
   mediaPreview: document.querySelector("#mediaPreview"),
   postList: document.querySelector("#postList"),
   counts: document.querySelector("#boardCounts"),
@@ -64,7 +69,7 @@ boot();
 async function boot() {
   restorePosts();
   bindEvents();
-  await loadRemotePosts();
+  await Promise.all([loadMediaConfig(), loadRemotePosts()]);
   render();
 }
 
@@ -122,6 +127,11 @@ async function loadRemotePosts() {
   }
 }
 
+async function loadMediaConfig() {
+  const me = await fetchJson("/api/me");
+  state.mediaConfig = mediaUploadConfig(me);
+}
+
 async function createPost(title, body) {
   if (state.apiReady) {
     const form = new FormData();
@@ -129,14 +139,21 @@ async function createPost(title, body) {
     form.append("title", title);
     form.append("body", body);
     for (const item of state.pendingMedia) form.append("media", item.file, item.file.name || "media");
-    const response = await fetch("/api/posts", { method: "POST", body: form });
-    if (response.ok) {
-      await loadRemotePosts();
-      resetComposer();
-      render();
+    try {
+      const response = await fetch("/api/posts", { method: "POST", body: form });
+      if (response.ok) {
+        await loadRemotePosts();
+        resetComposer();
+        render();
+        return;
+      }
+      const data = await response.json().catch(() => ({}));
+      showComposerMessage(data.error || `Post failed (${response.status})`);
+      renderMediaStatus();
       return;
+    } catch {
+      state.apiReady = false;
     }
-    state.apiReady = false;
   }
 
   state.posts.unshift({
@@ -184,14 +201,16 @@ async function votePost(id, amount) {
 }
 
 function addFiles(files) {
-  const accepted = files.filter((file) => /^image\/|^video\//.test(file.type)).slice(0, 6);
-  for (const file of accepted) {
+  const result = filterAcceptedMediaFiles(files, state.mediaConfig, state.pendingMedia.length);
+  for (const file of result.accepted) {
     state.pendingMedia.push({
       file,
       url: URL.createObjectURL(file),
     });
   }
+  showComposerMessage(result.rejected.map((item) => item.reason).join(" · "));
   renderMediaPreview();
+  renderMediaStatus();
 }
 
 function render() {
@@ -201,6 +220,7 @@ function render() {
   renderPosts();
   renderCounts();
   renderMediaPreview();
+  renderMediaStatus();
 }
 
 function renderMediaPreview() {
@@ -287,7 +307,19 @@ function resetComposer() {
   els.postBody.value = "";
   els.postMedia.value = "";
   state.pendingMedia = [];
+  showComposerMessage("");
   renderMediaPreview();
+  renderMediaStatus();
+}
+
+function renderMediaStatus() {
+  if (!els.mediaStatus) return;
+  els.mediaStatus.textContent = state.composerMessage || state.mediaConfig.detail;
+  els.mediaStatus.dataset.tone = state.composerMessage ? "error" : state.mediaConfig.store;
+}
+
+function showComposerMessage(message) {
+  state.composerMessage = message || "";
 }
 
 function normalizeRemotePost(post) {
@@ -346,4 +378,14 @@ function relativeTime(value) {
 function newId() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+async function fetchJson(path) {
+  try {
+    const response = await fetch(path, { headers: { Accept: "application/json" } });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
 }

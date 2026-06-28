@@ -108,6 +108,7 @@ pub fn build_local_api_router(options: LocalApiOptions) -> Result<Router> {
 
 async fn me_response(State(state): State<Arc<LocalApiState>>, headers: HeaderMap) -> Response {
     let auth = local_auth_status();
+    let media = local_media_status();
     json_response(match current_user(&state, &headers) {
         Ok(Some(user)) => {
             let providers = providers_for_user(&state, &user.id).unwrap_or_default();
@@ -115,10 +116,11 @@ async fn me_response(State(state): State<Arc<LocalApiState>>, headers: HeaderMap
                 "user": public_user(user),
                 "providers": providers,
                 "configured": true,
-                "auth": auth
+                "auth": auth,
+                "media": media
             })
         }
-        Ok(None) => json!({ "user": null, "providers": [], "configured": true, "auth": auth }),
+        Ok(None) => json!({ "user": null, "providers": [], "configured": true, "auth": auth, "media": media }),
         Err(error) => json!({ "error": error.to_string() }),
     })
 }
@@ -549,6 +551,15 @@ fn local_auth_status() -> Value {
                 "missing": [],
             },
         }
+    })
+}
+
+fn local_media_status() -> Value {
+    json!({
+        "store": "local-files",
+        "max_upload_bytes": MAX_MEDIA_BYTES,
+        "max_avatar_bytes": MAX_AVATAR_BYTES,
+        "max_files_per_post": 6,
     })
 }
 
