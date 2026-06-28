@@ -1,3 +1,5 @@
+import { authProviderActions, authReadinessMessage } from "/auth-state.js?v=20260628-authready";
+
 const els = {
   status: document.querySelector("#profileStatus"),
   form: document.querySelector("#profileForm"),
@@ -56,7 +58,7 @@ async function loadProfile() {
   }
   const data = await response.json();
   if (!data.user) {
-    renderSignedOut();
+    renderSignedOut(data);
     return;
   }
   currentUser = data.user;
@@ -64,38 +66,42 @@ async function loadProfile() {
   els.displayName.value = data.user.display_name || "";
   els.bio.value = data.user.bio || "";
   els.avatarPreview.src = data.user.avatar_url || "";
-  renderProviders(data.providers || []);
+  renderProviders(data.providers || [], data);
 }
 
-function renderSignedOut() {
+function renderSignedOut(data = null) {
   currentUser = null;
-  els.status.textContent = "Sign in with Google or Naver to edit your profile.";
+  els.status.textContent = authReadinessMessage(data);
   els.form.hidden = true;
-  els.providers.replaceChildren(providerLink("Google", "/api/auth/google/start"), providerLink("Naver", "/api/auth/naver/start"));
+  els.providers.replaceChildren(...authProviderActions(data).map((action) => providerRow(action.label, false, action)));
 }
 
-function renderProviders(providers) {
+function renderProviders(providers, data = null) {
   els.form.hidden = false;
   const linked = new Set(providers.map((item) => item.provider));
   els.providers.replaceChildren(
-    providerRow("Google", linked.has("google"), "/api/auth/google/start"),
-    providerRow("Naver", linked.has("naver"), "/api/auth/naver/start")
+    ...authProviderActions(data).map((action) => providerRow(action.label, linked.has(action.provider), action))
   );
 }
 
-function providerRow(name, linked, href) {
+function providerRow(name, linked, action) {
   const row = document.createElement("div");
   row.className = "provider-row";
   const copy = document.createElement("div");
-  copy.append(text("strong", name), text("span", linked ? "Linked" : "Not linked"));
-  row.append(copy, linked ? text("span", "Ready") : providerLink("Link", href));
+  copy.append(text("strong", name), text("span", linked ? "Linked" : action.status));
+  row.append(copy, linked ? text("span", "Ready") : providerLink(action.enabled ? "Link" : "Setup", action));
   return row;
 }
 
-function providerLink(label, href) {
+function providerLink(label, action) {
   const link = document.createElement("a");
-  link.href = href;
+  link.href = action.href;
   link.textContent = label;
+  if (!action.enabled) {
+    link.className = "auth-unconfigured";
+    link.setAttribute("aria-disabled", "true");
+    link.title = `${action.label} login setup is incomplete: ${action.missing.join(", ")}`;
+  }
   return link;
 }
 

@@ -1,3 +1,5 @@
+import { authProviderActions } from "/auth-state.js?v=20260628-authready";
+
 const shell = document.querySelector("[data-auth-shell]");
 
 if (shell) bootAuth();
@@ -30,8 +32,18 @@ function renderSignedIn(me) {
   shell.replaceChildren(profile, logout);
 }
 
-function renderSignedOut() {
-  shell.replaceChildren(buttonLink("/api/auth/google/start", "Google"), buttonLink("/api/auth/naver/start", "Naver"));
+function renderSignedOut(me) {
+  shell.replaceChildren(...authProviderActions(me).map(providerAction));
+}
+
+function providerAction(action) {
+  const link = buttonLink(action.href, action.label);
+  if (!action.enabled) {
+    link.className = "auth-unconfigured";
+    link.setAttribute("aria-disabled", "true");
+    link.title = `${action.label} login setup is incomplete: ${action.missing.join(", ")}`;
+  }
+  return link;
 }
 
 function buttonLink(href, label) {

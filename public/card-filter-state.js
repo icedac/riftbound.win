@@ -1,15 +1,15 @@
 export function resolveInitialCardFilters(cards, filters = {}) {
   const normalized = normalizeFilters(filters);
   const filtered = filterCards(cards, normalized);
-  if (!normalized.search || filtered.length > 0) {
+  if (filtered.length > 0 || !hasRecoverableInitialFilter(normalized)) {
     return { filters: normalized, filtered, clearedInitialSearch: false };
   }
 
-  const cleared = { ...normalized, search: "" };
+  const cleared = normalizeFilters({});
   return {
     filters: cleared,
     filtered: filterCards(cards, cleared),
-    clearedInitialSearch: true,
+    clearedInitialSearch: Boolean(normalized.search),
   };
 }
 
@@ -62,4 +62,17 @@ export function cardSearchText(card) {
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
+}
+
+function hasRecoverableInitialFilter(filters) {
+  return Boolean(
+    filters.search ||
+      filters.color ||
+      filters.type ||
+      filters.set ||
+      filters.rarity ||
+      filters.cost ||
+      filters.tag ||
+      filters.backOnly
+  );
 }

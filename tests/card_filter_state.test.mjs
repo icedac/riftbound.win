@@ -23,3 +23,16 @@ test("valid URL searches are kept on initial card page load", () => {
   assert.equal(result.clearedInitialSearch, false);
   assert.deepEqual(result.filtered.map((card) => card.id), ["OGN-066-P"]);
 });
+
+test("zero-result initial filter state is cleared on initial card page load", () => {
+  const result = resolveInitialCardFilters(cards, {
+    search: "abandon",
+    color: "Calm",
+    hideBanned: true,
+  });
+
+  assert.equal(result.filters.search, "");
+  assert.equal(result.filters.color, "");
+  assert.equal(result.clearedInitialSearch, true);
+  assert.deepEqual(result.filtered.map((card) => card.id), ["OGN-066-P", "UNL-131"]);
+});

@@ -1,6 +1,6 @@
-import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-cardsdeps";
-import { filterCards, normalizeSearch, resolveInitialCardFilters } from "/card-filter-state.js?v=20260628-cardsdeps";
-import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardsdeps";
+import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-cardboot3";
+import { filterCards, normalizeSearch, resolveInitialCardFilters } from "/card-filter-state.js?v=20260628-cardboot3";
+import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardboot3";
 
 const state = {
   cards: [],

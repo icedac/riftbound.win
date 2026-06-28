@@ -172,6 +172,12 @@ textarea::placeholder {
   font-weight: 840;
 }
 
+.site-actions .auth-unconfigured,
+.provider-list .auth-unconfigured {
+  opacity: 0.64;
+  border-style: dashed;
+}
+
 .site-actions a:hover,
 .site-actions button:hover {
   border-color: rgb(245 158 11 / 48%);

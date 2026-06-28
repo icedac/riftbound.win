@@ -51,6 +51,15 @@ test("community app cache-busts media helper import", async () => {
   assert.doesNotMatch(source, /from "\/community-media\.js"/);
 });
 
+test("auth and profile apps cache-bust auth state helper imports", async () => {
+  for (const path of ["../public/auth.js", "../public/profile.js"]) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+
+    assert.match(source, /from "\/auth-state\.js\?v=[^"]+"/, path);
+    assert.doesNotMatch(source, /from "\/auth-state\.js"/, path);
+  }
+});
+
 test("public page scripts are cache-busted", async () => {
   for (const path of pages) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
