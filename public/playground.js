@@ -1,13 +1,7 @@
-import {
-  appendTableEvent,
-  createPlaygroundTable,
-  deckSummary,
-  joinPlaygroundTable,
-  replayTableEvents,
-  updateVoicePresence,
-} from "/playground-state.js?v=20260628-playground1";
+import { replayTableEvents } from "/playground-state.js?v=20260628-playground2";
 
-const STORAGE_KEY = "riftbound.playground.tables.v1";
+const TABLES_API = "/api/playground/tables";
+const POLL_MS = 2500;
 
 const state = {
   me: null,
@@ -16,6 +10,7 @@ const state = {
   tables: [],
   selectedTableId: "",
   micStream: null,
+  pollTimer: 0,
 };
 
 const els = {
@@ -39,18 +34,21 @@ const els = {
   startGame: document.querySelector("#startGame"),
   drawOpening: document.querySelector("#drawOpening"),
   drawRune: document.querySelector("#drawRune"),
+  revealCard: document.querySelector("#revealCard"),
   moveBattlefield: document.querySelector("#moveBattlefield"),
   passTurn: document.querySelector("#passTurn"),
 };
 
 async function boot() {
   bindEvents();
-  restoreTables();
+  const pathTableId = tableIdFromPath();
   const [cards, me] = await Promise.all([fetchJson("/cards.json", []), fetchJson("/api/me", {})]);
   state.cards = Array.isArray(cards) ? cards : [];
   state.me = me.user || null;
-  await loadSavedDecks();
+  if (pathTableId) state.selectedTableId = pathTableId;
+  await Promise.all([loadSavedDecks(), loadTables()]);
   render();
+  state.pollTimer = window.setInterval(loadTablesQuietly, POLL_MS);
 }
 
 function bindEvents() {
@@ -65,6 +63,7 @@ function bindEvents() {
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
   els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 4 }));
   els.drawRune.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "rune_deck", to: "revealed", count: 1 }));
+  els.revealCard.addEventListener("click", () => appendAction("card.reveal", { seat_index: currentSeatIndex(), from: "hand", revealed_by: currentUserId() }));
   els.moveBattlefield.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
   els.chatForm.addEventListener("submit", (event) => {
@@ -87,36 +86,59 @@ async function loadSavedDecks() {
     state.savedDecks = [];
     return;
   }
+  const data = await fetchJson("/api/saved-decks", { decks: [] });
+  state.savedDecks = Array.isArray(data.decks) ? data.decks : [];
+}
+
+async function loadTablesQuietly() {
   try {
-    const data = await fetchJson("/api/saved-decks", { decks: [] });
-    state.savedDecks = Array.isArray(data.decks) ? data.decks : [];
+    await loadTables();
+    render();
   } catch (error) {
     console.error(error);
-    state.savedDecks = [];
   }
 }
 
-function createTable() {
-  const deck = selectedDeck();
-  if (!state.me || !deck) return;
-  const table = createPlaygroundTable({ savedDeck: deck, user: state.me, cards: state.cards });
-  state.tables.unshift(table);
-  state.selectedTableId = table.id;
-  persistTables();
-  render();
+async function loadTables() {
+  const data = await fetchJson(TABLES_API, { tables: [] });
+  state.tables = Array.isArray(data.tables) ? data.tables : [];
+  if (!state.tables.some((table) => table.id === state.selectedTableId)) {
+    state.selectedTableId = state.tables[0]?.id || state.selectedTableId || "";
+  }
 }
 
-function joinSelectedTable() {
+async function createTable() {
+  const deck = selectedDeck();
+  if (!state.me || !deck) return;
+  try {
+    const data = await apiJson(TABLES_API, { deck_id: deck.id });
+    mergeTable(data.table);
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+async function joinSelectedTable() {
   const table = currentTable();
   const deck = selectedDeck();
   if (!state.me || !table || !deck) return;
-  updateCurrentTable(joinPlaygroundTable({ table, savedDeck: deck, user: state.me, cards: state.cards }));
+  try {
+    const data = await apiJson(`${TABLES_API}/${encodeURIComponent(table.id)}/join`, { deck_id: deck.id });
+    mergeTable(data.table);
+  } catch (error) {
+    reportError(error);
+  }
 }
 
-function appendAction(type, payload) {
+async function appendAction(type, payload) {
   const table = currentTable();
   if (!table || !state.me) return;
-  updateCurrentTable(appendTableEvent(table, { actorId: currentUserId(), type, payload }));
+  try {
+    const data = await apiJson(`${TABLES_API}/${encodeURIComponent(table.id)}/events`, { type, payload });
+    mergeTable(data.table);
+  } catch (error) {
+    reportError(error);
+  }
 }
 
 async function toggleVoice() {
@@ -125,16 +147,28 @@ async function toggleVoice() {
   if (state.micStream) {
     state.micStream.getTracks().forEach((track) => track.stop());
     state.micStream = null;
-    updateCurrentTable(updateVoicePresence(table, { userId: currentUserId(), muted: true, talking: false }));
+    await appendAction("voice.presence", { muted: true, talking: false });
     return;
   }
   try {
     state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    updateCurrentTable(updateVoicePresence(table, { userId: currentUserId(), muted: false, talking: true }));
+    await appendAction("voice.presence", { muted: false, talking: true });
   } catch (error) {
     console.error(error);
     els.voiceStatus.textContent = "Mic permission unavailable";
   }
+}
+
+function mergeTable(table) {
+  if (!table?.id) return;
+  const index = state.tables.findIndex((item) => item.id === table.id);
+  if (index >= 0) {
+    state.tables[index] = table;
+  } else {
+    state.tables.unshift(table);
+  }
+  state.selectedTableId = table.id;
+  render();
 }
 
 function render() {
@@ -149,7 +183,7 @@ function renderStatus() {
     els.status.textContent = "Sign in with Naver to create or join tables";
     return;
   }
-  els.status.textContent = `${state.me.display_name || "Player"} · ${state.savedDecks.length} saved deck(s)`;
+  els.status.textContent = `${state.me.display_name || "Player"} · ${state.savedDecks.length} saved deck(s) · ${state.tables.length} table(s)`;
 }
 
 function renderDecks() {
@@ -159,7 +193,8 @@ function renderDecks() {
   );
   els.decks.disabled = !state.savedDecks.length;
   els.createTable.disabled = !state.me || !state.savedDecks.length;
-  els.joinTable.disabled = !state.me || !state.savedDecks.length || !currentTable();
+  const table = currentTable();
+  els.joinTable.disabled = !state.me || !state.savedDecks.length || !table || (table.seats || []).length >= 2;
 }
 
 function renderTables() {
@@ -175,10 +210,10 @@ function tableButton(table) {
   button.type = "button";
   button.className = ["table-card", state.selectedTableId === table.id ? "active" : ""].filter(Boolean).join(" ");
   button.dataset.tableId = table.id;
-  const host = table.seats[0];
+  const host = table.seats?.[0];
   button.append(
     text("strong", host?.deck_name || "Untitled Table"),
-    text("span", `${table.status} · ${table.seats.length}/2 players`),
+    text("span", `${table.status} · ${(table.seats || []).length}/2 players`),
     text("small", `${host?.display_name || "Host"} · ${host?.zones?.main_deck?.length || 0} card deck`)
   );
   return button;
@@ -186,6 +221,10 @@ function tableButton(table) {
 
 function renderTable() {
   const table = currentTable();
+  const controlsDisabled = !table || !state.me || !currentSeat();
+  for (const control of [els.startGame, els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.passTurn, els.toggleVoice, els.submitResult]) {
+    control.disabled = controlsDisabled;
+  }
   if (!table) {
     els.tableTitle.textContent = "No table selected";
     els.tableZones.replaceChildren(empty("Open or select a table."));
@@ -194,11 +233,11 @@ function renderTable() {
     els.voiceStatus.textContent = "Mic idle";
     return;
   }
-  els.tableTitle.textContent = `${table.id} · ${table.status}`;
-  els.tableZones.replaceChildren(...table.seats.map(seatZones));
-  els.eventLog.replaceChildren(...table.events.slice().reverse().map(eventNode));
-  els.chatLog.replaceChildren(...table.chat.map((chat) => text("p", `${playerName(table, chat.user_id)}: ${chat.text}`)));
-  const voice = table.voice[currentUserId()];
+  els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)}`;
+  els.tableZones.replaceChildren(...(table.seats || []).map(seatZones));
+  els.eventLog.replaceChildren(...(table.events || []).slice().reverse().map(eventNode));
+  els.chatLog.replaceChildren(...(table.chat || []).map((chat) => text("p", `${playerName(table, chat.user_id)}: ${chat.text}`)));
+  const voice = table.voice?.[currentUserId()];
   els.voiceStatus.textContent = voice?.talking ? "Mic active" : voice?.muted ? "Mic muted" : "Mic idle";
   els.toggleVoice.textContent = state.micStream ? "Mute Mic" : "Enable Mic";
 }
@@ -212,10 +251,10 @@ function seatZones(seat) {
   for (const key of ["main_deck", "rune_deck", "hand", "battlefield", "discard", "removed", "revealed"]) {
     const zone = document.createElement("div");
     zone.className = "zone-cell";
-    zone.append(text("strong", labelZone(key)), text("span", `${seat.zones[key]?.length || 0}`));
+    zone.append(text("strong", labelZone(key)), text("span", `${seat.zones?.[key]?.length || 0}`));
     const preview = document.createElement("div");
     preview.className = "zone-preview";
-    for (const card of (seat.zones[key] || []).slice(-4)) preview.append(cardChip(card.id));
+    for (const card of (seat.zones?.[key] || []).slice(-4)) preview.append(cardChip(card.id));
     zone.append(preview);
     zones.append(zone);
   }
@@ -225,7 +264,7 @@ function seatZones(seat) {
 
 function eventNode(event) {
   const node = document.createElement("p");
-  node.textContent = `#${event.sequence} ${playerName(currentTable(), event.actor_id)} ${event.type}`;
+  node.textContent = `#${event.sequence} ${playerName(currentTable(), event.actor_id)} ${eventSummary(event)}`;
   return node;
 }
 
@@ -235,14 +274,12 @@ function renderReplay() {
   els.replayLog.replaceChildren(...replay.map((event) => text("p", `#${event.sequence} ${event.summary}`)));
 }
 
-function updateCurrentTable(nextTable) {
-  state.tables = state.tables.map((table) => (table.id === nextTable.id ? nextTable : table));
-  persistTables();
-  render();
-}
-
 function currentTable() {
   return state.tables.find((table) => table.id === state.selectedTableId) || state.tables[0] || null;
+}
+
+function currentSeat() {
+  return currentTable()?.seats?.find((seat) => seat.user_id === currentUserId()) || null;
 }
 
 function selectedDeck() {
@@ -271,23 +308,42 @@ function playerName(table, userId) {
   return table?.seats?.find((seat) => seat.user_id === userId)?.display_name || "Player";
 }
 
-function restoreTables() {
-  try {
-    state.tables = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-    state.selectedTableId = state.tables[0]?.id || "";
-  } catch {
-    state.tables = [];
-  }
-}
-
-function persistTables() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tables));
-}
-
 async function fetchJson(url, fallback) {
-  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+  const response = await fetch(url, { headers: { Accept: "application/json" }, cache: "no-store", credentials: "same-origin" });
   if (!response.ok) return fallback;
   return response.json();
+}
+
+async function apiJson(url, body) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Playground request failed");
+  return data;
+}
+
+function reportError(error) {
+  console.error(error);
+  els.status.textContent = error.message || "Playground request failed";
+}
+
+function eventSummary(event) {
+  if (event.type === "card.move") return `${event.payload?.count || 1} card(s): ${event.payload?.from} -> ${event.payload?.to}`;
+  if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
+  if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
+  if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
+  if (event.type === "turn.pass") return `pass to ${playerName(currentTable(), event.payload?.to_user_id)}`;
+  if (event.type === "result.propose") return `result ${event.payload?.result || ""}`;
+  return event.type || "event";
+}
+
+function tableIdFromPath() {
+  const match = location.pathname.match(/^\/playground\/tables\/([^/]+)/);
+  return match ? decodeURIComponent(match[1]) : "";
 }
 
 function labelZone(key) {
@@ -320,6 +376,11 @@ function empty(value) {
   node.className = "empty-state";
   return node;
 }
+
+window.addEventListener("beforeunload", () => {
+  if (state.pollTimer) window.clearInterval(state.pollTimer);
+  if (state.micStream) state.micStream.getTracks().forEach((track) => track.stop());
+});
 
 boot().catch((error) => {
   console.error(error);

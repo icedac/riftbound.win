@@ -74,6 +74,9 @@ test("worker initializes D1 schema with single prepared statements", async () =>
     },
   });
   assert.ok(db.statements.some((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS users")));
+  assert.ok(db.statements.some((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS playground_tables")));
+  assert.ok(db.statements.some((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS playground_seats")));
+  assert.ok(db.statements.some((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS playground_events")));
   assert.ok(db.statements.every((sql) => !sql.includes(";\n")));
 });
 
@@ -123,6 +126,22 @@ test("worker reports R2 media capability when MEDIA binding is configured", asyn
   });
 });
 
+test("worker serves playground table deep links from the static playground entrypoint", async () => {
+  let assetUrl = "";
+  const response = await worker.fetch(new Request("https://riftbound.kr/playground/tables/table-123"), {
+    ASSETS: {
+      fetch: (request) => {
+        assetUrl = request.url;
+        return new Response("<title>Riftbound.kr Playground</title>");
+      },
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(new URL(assetUrl).pathname, "/playground/");
+  assert.match(await response.text(), /Riftbound\.kr Playground/);
+});
+
 class BoundStatement {
   constructor(db, sql) {
     this.db = db;
@@ -150,6 +169,32 @@ class BoundStatement {
     } else if (sql.startsWith("INSERT INTO saved_decks")) {
       const [id, userId, name, format, deckJson, createdAt, updatedAt] = this.args;
       this.db.savedDecks.push({ id, user_id: userId, name, format, deck_json: deckJson, created_at: createdAt, updated_at: updatedAt });
+    } else if (sql.startsWith("INSERT INTO playground_tables")) {
+      const [id, hostUserId, status, createdAt, updatedAt, snapshot] = this.args;
+      this.db.playgroundTables.push({ id, host_user_id: hostUserId, status, created_at: createdAt, updated_at: updatedAt, active_snapshot_json: snapshot });
+    } else if (sql.startsWith("INSERT INTO playground_seats")) {
+      const [tableId, seatIndex, userId, displayName, deckId, deckName, deckSnapshot, joinedAt] = this.args;
+      this.db.playgroundSeats.push({
+        table_id: tableId,
+        seat_index: seatIndex,
+        user_id: userId,
+        display_name: displayName,
+        deck_id: deckId,
+        deck_name: deckName,
+        deck_snapshot_json: deckSnapshot,
+        joined_at: joinedAt,
+      });
+    } else if (sql.startsWith("UPDATE playground_tables SET status")) {
+      const [status, updatedAt, snapshot, id] = this.args;
+      const table = this.db.playgroundTables.find((item) => item.id === id);
+      Object.assign(table, { status, updated_at: updatedAt, active_snapshot_json: snapshot });
+    } else if (sql.startsWith("UPDATE playground_tables SET updated_at")) {
+      const [updatedAt, snapshot, status, id] = this.args;
+      const table = this.db.playgroundTables.find((item) => item.id === id);
+      Object.assign(table, { updated_at: updatedAt, active_snapshot_json: snapshot, status });
+    } else if (sql.startsWith("INSERT INTO playground_events")) {
+      const [id, tableId, sequence, userId, eventType, eventJson, createdAt] = this.args;
+      this.db.playgroundEvents.push({ id, table_id: tableId, sequence, user_id: userId, event_type: eventType, event_json: eventJson, created_at: createdAt });
     }
     return { success: true };
   }
@@ -171,6 +216,17 @@ class BoundStatement {
           .sort((a, b) => b.updated_at - a.updated_at),
       };
     }
+    if (this.sql.includes("FROM playground_tables")) {
+      return { results: [...this.db.playgroundTables].sort((a, b) => b.updated_at - a.updated_at) };
+    }
+    if (this.sql.includes("FROM playground_events WHERE table_id = ? AND sequence > ?")) {
+      const [tableId, after] = this.args;
+      return {
+        results: this.db.playgroundEvents
+          .filter((event) => event.table_id === tableId && event.sequence > after)
+          .sort((a, b) => a.sequence - b.sequence),
+      };
+    }
     return { results: [] };
   }
 
@@ -183,6 +239,27 @@ class BoundStatement {
       const [sessionId, now] = this.args;
       const session = this.db.sessions.find((item) => item.id === sessionId && item.expires_at > now);
       return session ? this.db.users.find((user) => user.id === session.user_id) || null : null;
+    }
+    if (this.sql.includes("FROM saved_decks WHERE id = ? AND user_id = ?")) {
+      const [id, userId] = this.args;
+      return this.db.savedDecks.find((deck) => deck.id === id && deck.user_id === userId) || null;
+    }
+    if (this.sql.includes("FROM playground_tables WHERE id = ?")) {
+      const [id] = this.args;
+      return this.db.playgroundTables.find((table) => table.id === id) || null;
+    }
+    if (this.sql.includes("SELECT COUNT(*) AS count FROM playground_seats")) {
+      const [tableId] = this.args;
+      return { count: this.db.playgroundSeats.filter((seat) => seat.table_id === tableId).length };
+    }
+    if (this.sql.includes("SELECT seat_index FROM playground_seats")) {
+      const [tableId, userId] = this.args;
+      return this.db.playgroundSeats.find((seat) => seat.table_id === tableId && seat.user_id === userId) || null;
+    }
+    if (this.sql.includes("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM playground_events")) {
+      const [tableId] = this.args;
+      const sequence = Math.max(0, ...this.db.playgroundEvents.filter((event) => event.table_id === tableId).map((event) => event.sequence));
+      return { sequence };
     }
     if (this.sql.includes("FROM users WHERE avatar_key")) {
       const [avatarKey] = this.args;
@@ -200,6 +277,9 @@ class InMemoryD1Database {
     this.users = [];
     this.sessions = [];
     this.savedDecks = [];
+    this.playgroundTables = [];
+    this.playgroundSeats = [];
+    this.playgroundEvents = [];
   }
 
   prepare(sql) {
@@ -323,4 +403,126 @@ test("worker stores saved decks for the current user", async () => {
   );
   assert.equal(list.status, 200);
   assert.deepEqual(await list.json(), { decks: [created.deck] });
+});
+
+test("worker persists playground tables, seats, snapshots, and append-only events", async () => {
+  const db = new InMemoryD1Database();
+  const now = Date.now();
+  db.users.push(
+    {
+      id: "host-user",
+      display_name: "Host",
+      bio: "",
+      avatar_key: "",
+      avatar_type: "",
+      avatar_data: "",
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "guest-user",
+      display_name: "Guest",
+      bio: "",
+      avatar_key: "",
+      avatar_type: "",
+      avatar_data: "",
+      created_at: now,
+      updated_at: now,
+    }
+  );
+  db.sessions.push(
+    { id: "host-session", user_id: "host-user", expires_at: now + 60_000 },
+    { id: "guest-session", user_id: "guest-user", expires_at: now + 60_000 }
+  );
+  db.savedDecks.push(
+    {
+      id: "host-deck",
+      user_id: "host-user",
+      name: "Host Deck",
+      format: "constructed",
+      deck_json: JSON.stringify({ main: [{ id: "OGN-001", quantity: 5 }], runes: [{ id: "OGN-R01", quantity: 2 }] }),
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "guest-deck",
+      user_id: "guest-user",
+      name: "Guest Deck",
+      format: "constructed",
+      deck_json: JSON.stringify({ main: [{ id: "OGN-002", quantity: 5 }], runes: [{ id: "OGN-R02", quantity: 2 }] }),
+      created_at: now,
+      updated_at: now,
+    }
+  );
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const unauthorized = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  assert.equal(unauthorized.status, 401);
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  assert.equal(create.status, 201);
+  const created = await create.json();
+  const tableId = created.table.id;
+  assert.equal(created.table.status, "waiting");
+  assert.equal(created.table.seats[0].zones.main_deck.length, 5);
+
+  const join = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+  assert.equal(join.status, 200);
+  const joined = await join.json();
+  assert.equal(joined.table.status, "active");
+  assert.equal(joined.table.seats.length, 2);
+
+  const move = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 } }),
+    }),
+    env
+  );
+  assert.equal(move.status, 201);
+  const moved = await move.json();
+  assert.equal(moved.event.sequence, 1);
+  assert.equal(moved.table.seats[0].zones.hand.length, 2);
+  assert.equal(moved.table.seats[0].zones.main_deck.length, 3);
+
+  const forged = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "card.move", payload: { active_snapshot_json: {} } }),
+    }),
+    env
+  );
+  assert.equal(forged.status, 400);
+
+  const events = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events?after=0`, {
+      headers: { Cookie: "rw_session=guest-session" },
+    }),
+    env
+  );
+  assert.equal(events.status, 200);
+  assert.equal((await events.json()).events.length, 1);
 });

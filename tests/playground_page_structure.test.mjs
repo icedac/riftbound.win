@@ -26,6 +26,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="playgroundDecks"',
     'id="playgroundTable"',
     'id="tableZones"',
+    'id="revealCard"',
     'id="eventLog"',
     'id="chatLog"',
     'id="voicePanel"',
@@ -37,4 +38,13 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
   ]) {
     assert.match(html, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), required);
   }
+});
+
+test("playground client uses shared server table APIs instead of browser-local tables", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(js, /\/api\/playground\/tables/);
+  assert.match(js, /\/events/);
+  assert.doesNotMatch(js, /localStorage/);
+  assert.doesNotMatch(js, /riftbound\.playground\.tables\.v1/);
 });

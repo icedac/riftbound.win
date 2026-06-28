@@ -79,6 +79,30 @@ struct SavedDeckPayload {
     deck_json: Option<Value>,
 }
 
+#[derive(Debug, Deserialize)]
+struct PlaygroundDeckPayload {
+    deck_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaygroundEventPayload {
+    #[serde(rename = "type")]
+    event_type: Option<String>,
+    payload: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaygroundEventsQuery {
+    after: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct SavedDeckRecord {
+    id: String,
+    name: String,
+    deck_json: Value,
+}
+
 #[derive(Debug)]
 struct UploadedFile {
     filename: String,
@@ -105,13 +129,40 @@ pub fn build_local_api_router(options: LocalApiOptions) -> Result<Router> {
     Ok(Router::new()
         .route("/api/me", get(me_response))
         .route("/api/auth/{provider}/start", get(local_auth_start))
+        .route("/playground/tables/{id}", get(playground_table_entrypoint))
         .route("/api/auth/logout", post(logout_response))
         .route("/api/profile", put(update_profile))
         .route("/api/profile/avatar", post(update_avatar))
         .route("/api/posts", get(list_posts).post(create_post))
         .route("/api/posts/{id}/vote", post(vote_post))
-        .route("/api/saved-decks", get(list_saved_decks).post(create_saved_deck))
+        .route(
+            "/api/saved-decks",
+            get(list_saved_decks).post(create_saved_deck),
+        )
+        .route(
+            "/api/playground/tables",
+            get(list_playground_tables).post(create_playground_table),
+        )
+        .route("/api/playground/tables/{id}", get(get_playground_table))
+        .route(
+            "/api/playground/tables/{id}/join",
+            post(join_playground_table),
+        )
+        .route(
+            "/api/playground/tables/{id}/events",
+            get(list_playground_events).post(append_playground_event),
+        )
         .with_state(state))
+}
+
+async fn playground_table_entrypoint(
+    State(state): State<Arc<LocalApiState>>,
+    Path(_id): Path<String>,
+) -> Response {
+    match fs::read_to_string(state.public_dir.join("playground").join("index.html")).await {
+        Ok(html) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response(),
+        Err(_) => not_found("Playground entrypoint not found"),
+    }
 }
 
 async fn me_response(State(state): State<Arc<LocalApiState>>, headers: HeaderMap) -> Response {
@@ -128,7 +179,9 @@ async fn me_response(State(state): State<Arc<LocalApiState>>, headers: HeaderMap
                 "media": media
             })
         }
-        Ok(None) => json!({ "user": null, "providers": [], "configured": true, "auth": auth, "media": media }),
+        Ok(None) => {
+            json!({ "user": null, "providers": [], "configured": true, "auth": auth, "media": media })
+        }
         Err(error) => json!({ "error": error.to_string() }),
     })
 }
@@ -374,10 +427,7 @@ async fn vote_post(
     }
 }
 
-async fn list_saved_decks(
-    State(state): State<Arc<LocalApiState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn list_saved_decks(State(state): State<Arc<LocalApiState>>, headers: HeaderMap) -> Response {
     let Some(user) = current_user_or_response(&state, &headers) else {
         return unauthorized();
     };
@@ -423,6 +473,191 @@ async fn create_saved_deck(
     });
     match result {
         Ok(deck) => (StatusCode::CREATED, Json(json!({ "deck": deck }))).into_response(),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn list_playground_tables(
+    State(state): State<Arc<LocalApiState>>,
+    _headers: HeaderMap,
+) -> Response {
+    match playground_tables(&state) {
+        Ok(tables) => json_response(json!({ "tables": tables })),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn create_playground_table(
+    State(state): State<Arc<LocalApiState>>,
+    headers: HeaderMap,
+    Json(payload): Json<PlaygroundDeckPayload>,
+) -> Response {
+    let Some(user) = current_user_or_response(&state, &headers) else {
+        return unauthorized();
+    };
+    let Some(deck_id) = payload.deck_id.filter(|value| !value.trim().is_empty()) else {
+        return bad_request("Deck id required");
+    };
+    let result = with_conn(&state, |conn| {
+        let deck = saved_deck_record_for_user(conn, &deck_id, &user.id)?
+            .ok_or_else(|| anyhow::anyhow!("Deck not found"))?;
+        let table_id = new_id("table");
+        let now = now_ms();
+        let table = create_table_snapshot(&table_id, &user, &deck, now);
+        conn.execute(
+            "INSERT INTO local_playground_tables (id, host_user_id, status, created_at, updated_at, active_snapshot_json) VALUES (?, ?, ?, ?, ?, ?)",
+            params![table_id, user.id, "waiting", now, now, table.to_string()],
+        )?;
+        insert_playground_seat(conn, &table_id, 0, &user, &deck, now)?;
+        Ok(table)
+    });
+    match result {
+        Ok(table) => (StatusCode::CREATED, Json(json!({ "table": table }))).into_response(),
+        Err(error) if error.to_string().contains("Deck not found") => bad_request("Deck not found"),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn get_playground_table(
+    State(state): State<Arc<LocalApiState>>,
+    Path(id): Path<String>,
+) -> Response {
+    match playground_table(&state, &id) {
+        Ok(Some(table)) => json_response(json!({ "table": table })),
+        Ok(None) => not_found("Table not found"),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn join_playground_table(
+    State(state): State<Arc<LocalApiState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<PlaygroundDeckPayload>,
+) -> Response {
+    let Some(user) = current_user_or_response(&state, &headers) else {
+        return unauthorized();
+    };
+    let Some(deck_id) = payload.deck_id.filter(|value| !value.trim().is_empty()) else {
+        return bad_request("Deck id required");
+    };
+    let result = with_conn(&state, |conn| {
+        let deck = saved_deck_record_for_user(conn, &deck_id, &user.id)?
+            .ok_or_else(|| anyhow::anyhow!("Deck not found"))?;
+        let row =
+            playground_table_row(conn, &id)?.ok_or_else(|| anyhow::anyhow!("Table not found"))?;
+        let seat_count = playground_seat_count(conn, &id)?;
+        if playground_seat_index(conn, &id, &user.id)?.is_some() {
+            return Ok(safe_json(&row.2, json!({})));
+        }
+        if seat_count >= 2 {
+            anyhow::bail!("Table is full");
+        }
+        let now = now_ms();
+        let mut table = safe_json(&row.2, json!({}));
+        let seat = create_seat_snapshot(seat_count as usize, &user, &deck, now);
+        table
+            .get_mut("seats")
+            .and_then(Value::as_array_mut)
+            .ok_or_else(|| anyhow::anyhow!("Invalid table snapshot"))?
+            .push(seat);
+        table["status"] = json!("active");
+        table["updated_at"] = json!(now);
+        insert_playground_seat(conn, &id, seat_count, &user, &deck, now)?;
+        conn.execute(
+            "UPDATE local_playground_tables SET status = ?, updated_at = ?, active_snapshot_json = ? WHERE id = ?",
+            params!["active", now, table.to_string(), id],
+        )?;
+        Ok(table)
+    });
+    match result {
+        Ok(table) => json_response(json!({ "table": table })),
+        Err(error) if error.to_string().contains("Deck not found") => bad_request("Deck not found"),
+        Err(error) if error.to_string().contains("Table not found") => not_found("Table not found"),
+        Err(error) if error.to_string().contains("Table is full") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Table is full" })),
+        )
+            .into_response(),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn append_playground_event(
+    State(state): State<Arc<LocalApiState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Json(payload): Json<PlaygroundEventPayload>,
+) -> Response {
+    let Some(user) = current_user_or_response(&state, &headers) else {
+        return unauthorized();
+    };
+    let event_type = clean_text(payload.event_type.as_deref(), 40).unwrap_or_default();
+    if !valid_playground_event_type(&event_type) {
+        return bad_request("Unknown event type");
+    }
+    let event_payload = payload.payload.unwrap_or_else(|| json!({}));
+    if !event_payload.is_object() {
+        return bad_request("Event payload must be an object");
+    }
+    if contains_forbidden_snapshot_keys(&event_payload) {
+        return bad_request("Client-authored snapshots are not accepted");
+    }
+    let result = with_conn(&state, |conn| {
+        let row =
+            playground_table_row(conn, &id)?.ok_or_else(|| anyhow::anyhow!("Table not found"))?;
+        if playground_seat_index(conn, &id, &user.id)?.is_none() {
+            anyhow::bail!("Table seat required");
+        }
+        let sequence = next_playground_sequence(conn, &id)?;
+        let now = now_ms();
+        let event_id = new_id("event");
+        let event = json!({
+            "id": event_id,
+            "table_id": id,
+            "sequence": sequence,
+            "actor_id": user.id,
+            "type": event_type,
+            "payload": event_payload,
+            "created_at": now,
+        });
+        let mut table = safe_json(&row.2, json!({}));
+        apply_playground_event(&mut table, &event);
+        table["updated_at"] = json!(now);
+        let status = table["status"].as_str().unwrap_or("active").to_string();
+        conn.execute(
+            "INSERT INTO local_playground_events (id, table_id, sequence, user_id, event_type, event_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![
+                event_id,
+                id,
+                sequence,
+                user.id,
+                event_type,
+                event["payload"].to_string(),
+                now
+            ],
+        )?;
+        conn.execute(
+            "UPDATE local_playground_tables SET updated_at = ?, active_snapshot_json = ?, status = ? WHERE id = ?",
+            params![now, table.to_string(), status, id],
+        )?;
+        Ok(json!({ "table": table, "event": event }))
+    });
+    match result {
+        Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
+        Err(error) if error.to_string().contains("Table not found") => not_found("Table not found"),
+        Err(error) if error.to_string().contains("Table seat required") => unauthorized(),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn list_playground_events(
+    State(state): State<Arc<LocalApiState>>,
+    Path(id): Path<String>,
+    Query(query): Query<PlaygroundEventsQuery>,
+) -> Response {
+    match playground_events(&state, &id, query.after.unwrap_or(0)) {
+        Ok(events) => json_response(json!({ "events": events })),
         Err(error) => server_error(error),
     }
 }
@@ -488,9 +723,43 @@ fn init_local_api_db(conn: &Connection) -> Result<()> {
             updated_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS local_playground_tables (
+            id TEXT PRIMARY KEY,
+            host_user_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            active_snapshot_json TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS local_playground_seats (
+            table_id TEXT NOT NULL,
+            seat_index INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            deck_id TEXT NOT NULL,
+            deck_name TEXT NOT NULL,
+            deck_snapshot_json TEXT NOT NULL,
+            joined_at INTEGER NOT NULL,
+            PRIMARY KEY (table_id, seat_index)
+        );
+
+        CREATE TABLE IF NOT EXISTS local_playground_events (
+            id TEXT PRIMARY KEY,
+            table_id TEXT NOT NULL,
+            sequence INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            event_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS local_posts_board_created_idx ON local_posts(board, created_at);
         CREATE INDEX IF NOT EXISTS local_media_post_idx ON local_media(post_id, created_at);
         CREATE INDEX IF NOT EXISTS local_saved_decks_user_updated_idx ON local_saved_decks(user_id, updated_at);
+        CREATE INDEX IF NOT EXISTS local_playground_tables_updated_idx ON local_playground_tables(updated_at);
+        CREATE INDEX IF NOT EXISTS local_playground_seats_user_idx ON local_playground_seats(user_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS local_playground_events_table_sequence_idx ON local_playground_events(table_id, sequence);
         "#,
     )?;
     Ok(())
@@ -713,6 +982,485 @@ fn saved_deck_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
     }))
 }
 
+fn saved_deck_record_for_user(
+    conn: &Connection,
+    id: &str,
+    user_id: &str,
+) -> Result<Option<SavedDeckRecord>> {
+    Ok(conn
+        .query_row(
+            "SELECT id, name, deck_json FROM local_saved_decks WHERE id = ? AND user_id = ?",
+            params![id, user_id],
+            |row| {
+                let deck_text: String = row.get(2)?;
+                Ok(SavedDeckRecord {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    deck_json: serde_json::from_str(&deck_text).unwrap_or_else(|_| json!({})),
+                })
+            },
+        )
+        .optional()?)
+}
+
+fn playground_tables(state: &LocalApiState) -> Result<Vec<Value>> {
+    with_conn(state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT active_snapshot_json FROM local_playground_tables ORDER BY updated_at DESC LIMIT 80",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let text: String = row.get(0)?;
+            Ok(safe_json(&text, json!({})))
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+fn playground_table(state: &LocalApiState, id: &str) -> Result<Option<Value>> {
+    with_conn(state, |conn| {
+        Ok(playground_table_row(conn, id)?.map(|row| safe_json(&row.2, json!({}))))
+    })
+}
+
+fn playground_table_row(conn: &Connection, id: &str) -> Result<Option<(String, String, String)>> {
+    Ok(conn
+        .query_row(
+            "SELECT id, status, active_snapshot_json FROM local_playground_tables WHERE id = ?",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?)
+}
+
+fn playground_seat_count(conn: &Connection, table_id: &str) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM local_playground_seats WHERE table_id = ?",
+        params![table_id],
+        |row| row.get(0),
+    )?)
+}
+
+fn playground_seat_index(conn: &Connection, table_id: &str, user_id: &str) -> Result<Option<i64>> {
+    Ok(conn
+        .query_row(
+            "SELECT seat_index FROM local_playground_seats WHERE table_id = ? AND user_id = ?",
+            params![table_id, user_id],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+fn next_playground_sequence(conn: &Connection, table_id: &str) -> Result<i64> {
+    let current: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(sequence), 0) FROM local_playground_events WHERE table_id = ?",
+        params![table_id],
+        |row| row.get(0),
+    )?;
+    Ok(current + 1)
+}
+
+fn playground_events(state: &LocalApiState, table_id: &str, after: i64) -> Result<Vec<Value>> {
+    with_conn(state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, table_id, sequence, user_id, event_type, event_json, created_at
+               FROM local_playground_events
+              WHERE table_id = ? AND sequence > ?
+              ORDER BY sequence ASC",
+        )?;
+        let rows = stmt.query_map(params![table_id, after], playground_event_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+fn playground_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    let event_text: String = row.get(5)?;
+    Ok(json!({
+        "id": row.get::<_, String>(0)?,
+        "table_id": row.get::<_, String>(1)?,
+        "sequence": row.get::<_, i64>(2)?,
+        "actor_id": row.get::<_, String>(3)?,
+        "type": row.get::<_, String>(4)?,
+        "payload": serde_json::from_str(&event_text).unwrap_or_else(|_| json!({})),
+        "created_at": row.get::<_, i64>(6)?,
+    }))
+}
+
+fn insert_playground_seat(
+    conn: &Connection,
+    table_id: &str,
+    seat_index: i64,
+    user: &SessionUser,
+    deck: &SavedDeckRecord,
+    joined_at: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO local_playground_seats (table_id, seat_index, user_id, display_name, deck_id, deck_name, deck_snapshot_json, joined_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        params![
+            table_id,
+            seat_index,
+            user.id,
+            user.display_name,
+            deck.id,
+            deck.name,
+            deck.deck_json.to_string(),
+            joined_at,
+        ],
+    )?;
+    Ok(())
+}
+
+fn create_table_snapshot(
+    table_id: &str,
+    user: &SessionUser,
+    deck: &SavedDeckRecord,
+    now: i64,
+) -> Value {
+    json!({
+        "id": table_id,
+        "status": "waiting",
+        "created_at": now,
+        "updated_at": now,
+        "started_at": null,
+        "completed_at": null,
+        "turn_player_id": user.id,
+        "seats": [create_seat_snapshot(0, user, deck, now)],
+        "events": [],
+        "chat": [],
+        "voice": {},
+        "result": { "proposals": {}, "final": "" },
+    })
+}
+
+fn create_seat_snapshot(
+    seat_index: usize,
+    user: &SessionUser,
+    deck: &SavedDeckRecord,
+    joined_at: i64,
+) -> Value {
+    json!({
+        "seat_index": seat_index,
+        "user_id": user.id,
+        "display_name": user.display_name,
+        "deck_id": deck.id,
+        "deck_name": deck.name,
+        "deck_snapshot": deck.deck_json,
+        "joined_at": joined_at,
+        "zones": build_playground_zones(&deck.deck_json),
+    })
+}
+
+fn build_playground_zones(deck_json: &Value) -> Value {
+    let mut main_deck = Vec::new();
+    let mut rune_deck = Vec::new();
+    for entry in deck_entries(deck_json) {
+        let target = if entry.section == "runes" {
+            &mut rune_deck
+        } else {
+            &mut main_deck
+        };
+        for index in 0..entry.quantity {
+            target.push(json!({
+                "id": entry.id,
+                "instance_id": format!("{}-{}-{}", entry.id, entry.section, index + 1),
+            }));
+        }
+    }
+    json!({
+        "main_deck": main_deck,
+        "rune_deck": rune_deck,
+        "hand": [],
+        "battlefield": [],
+        "discard": [],
+        "removed": [],
+        "revealed": [],
+    })
+}
+
+struct DeckEntry {
+    id: String,
+    quantity: usize,
+    section: String,
+}
+
+fn deck_entries(deck_json: &Value) -> Vec<DeckEntry> {
+    if let Some(entries) = deck_json.get("entries").and_then(Value::as_array) {
+        return entries.iter().filter_map(deck_entry_from_value).collect();
+    }
+    ["legends", "main", "runes", "battlefields"]
+        .iter()
+        .flat_map(|section| {
+            deck_json
+                .get(section)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(move |entry| deck_entry_from_section(entry, section))
+        })
+        .collect()
+}
+
+fn deck_entry_from_value(value: &Value) -> Option<DeckEntry> {
+    let id = value.get("id")?.as_str()?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    let quantity = value.get("quantity").and_then(Value::as_u64).unwrap_or(0) as usize;
+    if quantity == 0 {
+        return None;
+    }
+    Some(DeckEntry {
+        id: id.to_string(),
+        quantity,
+        section: value
+            .get("section")
+            .and_then(Value::as_str)
+            .unwrap_or("main")
+            .to_string(),
+    })
+}
+
+fn deck_entry_from_section(value: &Value, section: &str) -> Option<DeckEntry> {
+    let mut entry = deck_entry_from_value(value)?;
+    entry.section = section.to_string();
+    Some(entry)
+}
+
+fn apply_playground_event(table: &mut Value, event: &Value) {
+    let event_type = event["type"].as_str().unwrap_or_default();
+    if event_type == "game.start" {
+        table["status"] = json!("active");
+        if table.get("started_at").is_none_or(Value::is_null) {
+            table["started_at"] = event["created_at"].clone();
+        }
+        if let Some(first_player) = event["payload"]
+            .get("first_player_id")
+            .and_then(Value::as_str)
+        {
+            table["turn_player_id"] = json!(first_player);
+        }
+    }
+    if event_type == "card.move" {
+        apply_card_move(table, &event["payload"]);
+    }
+    if event_type == "card.reveal" {
+        apply_card_reveal(table, &event["payload"]);
+    }
+    if event_type == "turn.pass" {
+        if let Some(to_user_id) = event["payload"].get("to_user_id").and_then(Value::as_str) {
+            table["turn_player_id"] = json!(to_user_id);
+        }
+    }
+    if event_type == "chat.message" {
+        let text = event["payload"]
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .chars()
+            .take(240)
+            .collect::<String>();
+        push_array_value(
+            table,
+            "chat",
+            json!({
+                "sequence": event["sequence"],
+                "user_id": event["actor_id"],
+                "text": text,
+                "created_at": event["created_at"],
+            }),
+        );
+    }
+    if event_type == "voice.presence" {
+        let actor = event["actor_id"].as_str().unwrap_or_default().to_string();
+        if !table.get("voice").is_some_and(Value::is_object) {
+            table["voice"] = json!({});
+        }
+        if let Some(voice) = table.get_mut("voice").and_then(Value::as_object_mut) {
+            voice.insert(
+                actor,
+                json!({
+                    "muted": event["payload"].get("muted").and_then(Value::as_bool).unwrap_or(false),
+                    "talking": event["payload"].get("talking").and_then(Value::as_bool).unwrap_or(false),
+                    "updated_at": event["created_at"],
+                }),
+            );
+        }
+    }
+    if event_type == "result.propose" {
+        apply_result_proposal(table, event);
+    }
+    push_array_value(table, "events", event.clone());
+}
+
+fn apply_card_move(table: &mut Value, payload: &Value) {
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let from = zone_name(
+        payload
+            .get("from")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    );
+    let to = zone_name(
+        payload
+            .get("to")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    );
+    if from.is_empty() || to.is_empty() {
+        return;
+    }
+    let count = payload
+        .get("count")
+        .and_then(Value::as_u64)
+        .unwrap_or(1)
+        .max(1) as usize;
+    let Some(seat) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+    else {
+        return;
+    };
+    let Some(zones) = seat.get_mut("zones").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let moved = {
+        let Some(from_zone) = zones.get_mut(&from).and_then(Value::as_array_mut) else {
+            return;
+        };
+        let drain_count = count.min(from_zone.len());
+        from_zone.drain(0..drain_count).collect::<Vec<_>>()
+    };
+    if let Some(to_zone) = zones.get_mut(&to).and_then(Value::as_array_mut) {
+        to_zone.extend(moved);
+    }
+}
+
+fn apply_card_reveal(table: &mut Value, payload: &Value) {
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let from = zone_name(
+        payload
+            .get("from")
+            .and_then(Value::as_str)
+            .unwrap_or("hand"),
+    );
+    let Some(seat) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+    else {
+        return;
+    };
+    let Some(zones) = seat.get_mut("zones").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let Some(from_zone) = zones.get_mut(&from).and_then(Value::as_array_mut) else {
+        return;
+    };
+    if from_zone.is_empty() {
+        return;
+    }
+    let index = payload
+        .get("card_id")
+        .and_then(Value::as_str)
+        .and_then(|card_id| from_zone.iter().position(|card| card["id"] == card_id))
+        .unwrap_or(0);
+    let mut card = from_zone.remove(index);
+    if let Some(card_object) = card.as_object_mut() {
+        card_object.insert("revealed_by".to_string(), payload["revealed_by"].clone());
+    }
+    if let Some(revealed) = zones.get_mut("revealed").and_then(Value::as_array_mut) {
+        revealed.push(card);
+    }
+}
+
+fn apply_result_proposal(table: &mut Value, event: &Value) {
+    let result = event["payload"]
+        .get("result")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if result.is_empty() {
+        return;
+    }
+    if !table.get("result").is_some_and(Value::is_object) {
+        table["result"] = json!({ "proposals": {}, "final": "" });
+    }
+    let actor = event["actor_id"].as_str().unwrap_or_default().to_string();
+    let seat_count = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    if let Some(proposals) = table
+        .get_mut("result")
+        .and_then(|value| value.get_mut("proposals"))
+        .and_then(Value::as_object_mut)
+    {
+        proposals.insert(actor, json!(result));
+        let proposed = proposals
+            .values()
+            .filter_map(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        let final_result = (seat_count >= 2
+            && proposed.len() >= 2
+            && proposed.iter().all(|value| value == &proposed[0]))
+        .then(|| proposed[0].clone());
+        if let Some(final_result) = final_result {
+            table["status"] = json!("completed");
+            table["completed_at"] = event["created_at"].clone();
+            table["result"]["final"] = json!(final_result);
+        }
+    }
+}
+
+fn push_array_value(root: &mut Value, key: &str, value: Value) {
+    if !root.get(key).is_some_and(Value::is_array) {
+        root[key] = json!([]);
+    }
+    root[key].as_array_mut().expect("array").push(value);
+}
+
+fn valid_playground_event_type(value: &str) -> bool {
+    matches!(
+        value,
+        "game.start"
+            | "card.move"
+            | "card.reveal"
+            | "turn.pass"
+            | "chat.message"
+            | "voice.presence"
+            | "result.propose"
+            | "player.concede"
+    )
+}
+
+fn contains_forbidden_snapshot_keys(value: &Value) -> bool {
+    value.as_object().is_some_and(|object| {
+        object.keys().any(|key| {
+            matches!(
+                key.as_str(),
+                "active_snapshot_json" | "snapshot" | "seats" | "events" | "zones"
+            )
+        })
+    })
+}
+
+fn zone_name(value: &str) -> String {
+    value.replace('-', "_").to_lowercase()
+}
+
+fn safe_json(value: &str, fallback: Value) -> Value {
+    serde_json::from_str(value).unwrap_or(fallback)
+}
+
 async fn next_file(
     multipart: &mut Multipart,
     field_name: &str,
@@ -797,6 +1545,10 @@ fn unauthorized() -> Response {
         Json(json!({ "error": "Sign in required" })),
     )
         .into_response()
+}
+
+fn not_found(message: &str) -> Response {
+    (StatusCode::NOT_FOUND, Json(json!({ "error": message }))).into_response()
 }
 
 fn server_error(error: anyhow::Error) -> Response {

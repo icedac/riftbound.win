@@ -14,6 +14,7 @@ export default {
       if (url.pathname.startsWith("/api/")) return handleApi(request, env, url);
       if (url.pathname.startsWith("/media/")) return mediaResponse(env, url.pathname.slice("/media/".length));
       if (url.pathname.startsWith("/avatars/")) return mediaResponse(env, url.pathname.slice(1));
+      if (url.pathname.startsWith("/playground/tables/")) return env.ASSETS.fetch(new Request(new URL("/playground/", request.url), request));
       return env.ASSETS.fetch(request);
     } catch (error) {
       console.error(error);
@@ -30,6 +31,15 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/posts" && request.method === "POST") return createPost(request, env);
   if (url.pathname === "/api/saved-decks" && request.method === "GET") return listSavedDecks(request, env);
   if (url.pathname === "/api/saved-decks" && request.method === "POST") return createSavedDeck(request, env);
+  if (url.pathname === "/api/playground/tables" && request.method === "GET") return listPlaygroundTables(env);
+  if (url.pathname === "/api/playground/tables" && request.method === "POST") return createPlaygroundTable(request, env);
+  const tableRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)$/);
+  if (tableRoute && request.method === "GET") return getPlaygroundTable(env, decodeURIComponent(tableRoute[1]));
+  const joinRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/join$/);
+  if (joinRoute && request.method === "POST") return joinPlaygroundTable(request, env, decodeURIComponent(joinRoute[1]));
+  const eventsRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/events$/);
+  if (eventsRoute && request.method === "GET") return listPlaygroundEvents(env, decodeURIComponent(eventsRoute[1]), url);
+  if (eventsRoute && request.method === "POST") return appendPlaygroundEvent(request, env, decodeURIComponent(eventsRoute[1]));
   if (url.pathname.startsWith("/api/posts/") && url.pathname.endsWith("/vote") && request.method === "POST") {
     const id = url.pathname.slice("/api/posts/".length, -"/vote".length);
     return votePost(request, env, decodeURIComponent(id));
@@ -219,6 +229,134 @@ async function createSavedDeck(request, env) {
     .bind(deck.id, session.user.id, deck.name, deck.format, JSON.stringify(deck.deck_json), now, now)
     .run();
   return json({ deck }, 201);
+}
+
+async function listPlaygroundTables(env) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const rows = await env.DB.prepare(
+    "SELECT active_snapshot_json FROM playground_tables ORDER BY updated_at DESC LIMIT 80"
+  ).all();
+  return json({ tables: (rows.results || []).map((row) => safeJson(row.active_snapshot_json, {})) });
+}
+
+async function createPlaygroundTable(request, env) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
+  if (!session) return json({ error: "Sign in required" }, 401);
+  const body = await request.json().catch(() => ({}));
+  const deckId = cleanText(body.deck_id, 120);
+  if (!deckId) return json({ error: "Deck id required" }, 400);
+  const deck = await savedDeckForUser(env, deckId, session.user.id);
+  if (!deck) return json({ error: "Deck not found" }, 400);
+  const now = Date.now();
+  const tableId = crypto.randomUUID();
+  const table = createTableSnapshot(tableId, session.user, deck, now);
+  await env.DB.prepare(
+    "INSERT INTO playground_tables (id, host_user_id, status, created_at, updated_at, active_snapshot_json) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+    .bind(tableId, session.user.id, "waiting", now, now, JSON.stringify(table))
+    .run();
+  await insertPlaygroundSeat(env, tableId, 0, session.user, deck, now);
+  return json({ table }, 201);
+}
+
+async function getPlaygroundTable(env, tableId) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const row = await playgroundTableRow(env, tableId);
+  if (!row) return json({ error: "Table not found" }, 404);
+  return json({ table: safeJson(row.active_snapshot_json, {}) });
+}
+
+async function joinPlaygroundTable(request, env, tableId) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
+  if (!session) return json({ error: "Sign in required" }, 401);
+  const body = await request.json().catch(() => ({}));
+  const deckId = cleanText(body.deck_id, 120);
+  if (!deckId) return json({ error: "Deck id required" }, 400);
+  const deck = await savedDeckForUser(env, deckId, session.user.id);
+  if (!deck) return json({ error: "Deck not found" }, 400);
+  const row = await playgroundTableRow(env, tableId);
+  if (!row) return json({ error: "Table not found" }, 404);
+  const existingSeat = await playgroundSeatIndex(env, tableId, session.user.id);
+  if (existingSeat) return json({ table: safeJson(row.active_snapshot_json, {}) });
+  const seatCount = await playgroundSeatCount(env, tableId);
+  if (seatCount >= 2) return json({ error: "Table is full" }, 409);
+  const now = Date.now();
+  const table = safeJson(row.active_snapshot_json, {});
+  if (!Array.isArray(table.seats)) table.seats = [];
+  table.seats.push(createSeatSnapshot(seatCount, session.user, deck, now));
+  table.status = "active";
+  table.updated_at = now;
+  await insertPlaygroundSeat(env, tableId, seatCount, session.user, deck, now);
+  await env.DB.prepare(
+    "UPDATE playground_tables SET status = ?, updated_at = ?, active_snapshot_json = ? WHERE id = ?"
+  )
+    .bind("active", now, JSON.stringify(table), tableId)
+    .run();
+  return json({ table });
+}
+
+async function appendPlaygroundEvent(request, env, tableId) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
+  if (!session) return json({ error: "Sign in required" }, 401);
+  const body = await request.json().catch(() => ({}));
+  const eventType = cleanText(body.type, 40);
+  if (!validPlaygroundEventType(eventType)) return json({ error: "Unknown event type" }, 400);
+  const payload = body.payload && typeof body.payload === "object" && !Array.isArray(body.payload) ? body.payload : {};
+  if (containsForbiddenSnapshotKeys(payload)) return json({ error: "Client-authored snapshots are not accepted" }, 400);
+  const row = await playgroundTableRow(env, tableId);
+  if (!row) return json({ error: "Table not found" }, 404);
+  const seat = await playgroundSeatIndex(env, tableId, session.user.id);
+  if (!seat) return json({ error: "Sign in required" }, 401);
+  const sequence = (await nextPlaygroundSequence(env, tableId)) + 1;
+  const now = Date.now();
+  const event = {
+    id: crypto.randomUUID(),
+    table_id: tableId,
+    sequence,
+    actor_id: session.user.id,
+    type: eventType,
+    payload,
+    created_at: now,
+  };
+  const table = safeJson(row.active_snapshot_json, {});
+  applyPlaygroundEvent(table, event);
+  table.updated_at = now;
+  const status = table.status || "active";
+  await env.DB.prepare(
+    "INSERT INTO playground_events (id, table_id, sequence, user_id, event_type, event_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(event.id, tableId, sequence, session.user.id, eventType, JSON.stringify(payload), now)
+    .run();
+  await env.DB.prepare(
+    "UPDATE playground_tables SET updated_at = ?, active_snapshot_json = ?, status = ? WHERE id = ?"
+  )
+    .bind(now, JSON.stringify(table), status, tableId)
+    .run();
+  return json({ table, event }, 201);
+}
+
+async function listPlaygroundEvents(env, tableId, url) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const after = Number(url.searchParams.get("after") || 0);
+  const rows = await env.DB.prepare(
+    "SELECT id, table_id, sequence, user_id, event_type, event_json, created_at FROM playground_events WHERE table_id = ? AND sequence > ? ORDER BY sequence ASC"
+  )
+    .bind(tableId, after)
+    .all();
+  return json({
+    events: (rows.results || []).map((row) => ({
+      id: row.id,
+      table_id: row.table_id,
+      sequence: row.sequence,
+      actor_id: row.user_id,
+      type: row.event_type,
+      payload: safeJson(row.event_json, {}),
+      created_at: row.created_at,
+    })),
+  });
 }
 
 async function startAuth(request, env, provider) {
@@ -447,6 +585,196 @@ function savedDeckRow(row) {
   };
 }
 
+async function savedDeckForUser(env, deckId, userId) {
+  const row = await env.DB.prepare("SELECT id, name, format, deck_json, created_at, updated_at FROM saved_decks WHERE id = ? AND user_id = ?")
+    .bind(deckId, userId)
+    .first();
+  return row ? savedDeckRow(row) : null;
+}
+
+async function playgroundTableRow(env, tableId) {
+  return env.DB.prepare("SELECT id, status, active_snapshot_json FROM playground_tables WHERE id = ?")
+    .bind(tableId)
+    .first();
+}
+
+async function playgroundSeatCount(env, tableId) {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM playground_seats WHERE table_id = ?")
+    .bind(tableId)
+    .first();
+  return Number(row?.count || 0);
+}
+
+async function playgroundSeatIndex(env, tableId, userId) {
+  return env.DB.prepare("SELECT seat_index FROM playground_seats WHERE table_id = ? AND user_id = ?")
+    .bind(tableId, userId)
+    .first();
+}
+
+async function nextPlaygroundSequence(env, tableId) {
+  const row = await env.DB.prepare("SELECT COALESCE(MAX(sequence), 0) AS sequence FROM playground_events WHERE table_id = ?")
+    .bind(tableId)
+    .first();
+  return Number(row?.sequence || 0);
+}
+
+async function insertPlaygroundSeat(env, tableId, seatIndex, user, deck, joinedAt) {
+  await env.DB.prepare(
+    "INSERT INTO playground_seats (table_id, seat_index, user_id, display_name, deck_id, deck_name, deck_snapshot_json, joined_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(tableId, seatIndex, user.id, user.display_name, deck.id, deck.name, JSON.stringify(deck.deck_json), joinedAt)
+    .run();
+}
+
+function createTableSnapshot(tableId, user, deck, now) {
+  return {
+    id: tableId,
+    status: "waiting",
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+    turn_player_id: user.id,
+    seats: [createSeatSnapshot(0, user, deck, now)],
+    events: [],
+    chat: [],
+    voice: {},
+    result: { proposals: {}, final: "" },
+  };
+}
+
+function createSeatSnapshot(seatIndex, user, deck, joinedAt) {
+  return {
+    seat_index: seatIndex,
+    user_id: user.id,
+    display_name: user.display_name,
+    deck_id: deck.id,
+    deck_name: deck.name,
+    deck_snapshot: deck.deck_json,
+    joined_at: joinedAt,
+    zones: buildPlaygroundZones(deck.deck_json),
+  };
+}
+
+function buildPlaygroundZones(deckJson = {}) {
+  const zones = {
+    main_deck: [],
+    rune_deck: [],
+    hand: [],
+    battlefield: [],
+    discard: [],
+    removed: [],
+    revealed: [],
+  };
+  for (const entry of deckEntries(deckJson)) {
+    const zone = entry.section === "runes" ? "rune_deck" : "main_deck";
+    for (let index = 0; index < entry.quantity; index += 1) {
+      zones[zone].push({ id: entry.id, instance_id: `${entry.id}-${entry.section}-${index + 1}` });
+    }
+  }
+  return zones;
+}
+
+function deckEntries(deckJson = {}) {
+  const rawEntries = Array.isArray(deckJson.entries)
+    ? deckJson.entries
+    : ["legends", "main", "runes", "battlefields"].flatMap((section) =>
+        (deckJson[section] || []).map((entry) => ({ ...entry, section }))
+      );
+  return rawEntries
+    .map((entry) => ({
+      id: String(entry.id || "").trim(),
+      quantity: Math.max(0, Math.floor(Number(entry.quantity || 0))),
+      section: entry.section || "main",
+    }))
+    .filter((entry) => entry.id && entry.quantity > 0);
+}
+
+function applyPlaygroundEvent(table, event) {
+  if (!Array.isArray(table.events)) table.events = [];
+  if (event.type === "game.start") {
+    table.status = "active";
+    table.started_at ||= event.created_at;
+    table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats?.[0]?.user_id || "";
+  }
+  if (event.type === "card.move") applyCardMove(table, event.payload);
+  if (event.type === "card.reveal") applyCardReveal(table, event.payload);
+  if (event.type === "turn.pass") table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
+  if (event.type === "chat.message") {
+    if (!Array.isArray(table.chat)) table.chat = [];
+    table.chat.push({
+      sequence: event.sequence,
+      user_id: event.actor_id,
+      text: String(event.payload.text || "").slice(0, 240),
+      created_at: event.created_at,
+    });
+  }
+  if (event.type === "voice.presence") {
+    table.voice ||= {};
+    table.voice[event.actor_id] = {
+      muted: Boolean(event.payload.muted),
+      talking: Boolean(event.payload.talking),
+      updated_at: event.created_at,
+    };
+  }
+  if (event.type === "result.propose") applyResultProposal(table, event);
+  table.events.push(event);
+}
+
+function applyCardMove(table, payload = {}) {
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const from = zoneName(payload.from);
+  const to = zoneName(payload.to);
+  if (!seat?.zones?.[from] || !seat.zones[to]) return;
+  const count = Math.max(1, Math.min(Number(payload.count || 1), seat.zones[from].length));
+  const moved = seat.zones[from].splice(0, count);
+  seat.zones[to].push(...moved);
+}
+
+function applyCardReveal(table, payload = {}) {
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const from = zoneName(payload.from || "hand");
+  if (!seat?.zones?.[from]) return;
+  const index = payload.card_id ? seat.zones[from].findIndex((card) => card.id === payload.card_id) : 0;
+  if (index < 0) return;
+  const [card] = seat.zones[from].splice(index, 1);
+  seat.zones.revealed.push({ ...card, revealed_by: payload.revealed_by || seat.user_id });
+}
+
+function applyResultProposal(table, event) {
+  table.result ||= { proposals: {}, final: "" };
+  table.result.proposals ||= {};
+  table.result.proposals[event.actor_id] = event.payload.result || "";
+  const proposals = Object.values(table.result.proposals).filter(Boolean);
+  if ((table.seats || []).length >= 2 && proposals.length >= 2 && new Set(proposals).size === 1) {
+    table.status = "completed";
+    table.completed_at = event.created_at;
+    table.result.final = proposals[0];
+  }
+}
+
+function nextSeatUserId(table, actorId) {
+  const seats = table.seats || [];
+  const current = seats.findIndex((seat) => seat.user_id === actorId);
+  return seats[(current + 1) % seats.length]?.user_id || table.turn_player_id || "";
+}
+
+function validPlaygroundEventType(type) {
+  return new Set(["game.start", "card.move", "card.reveal", "turn.pass", "chat.message", "voice.presence", "result.propose", "player.concede"]).has(type);
+}
+
+function containsForbiddenSnapshotKeys(payload) {
+  return ["active_snapshot_json", "snapshot", "seats", "events", "zones"].some((key) =>
+    Object.prototype.hasOwnProperty.call(payload, key)
+  );
+}
+
+function zoneName(value) {
+  return String(value || "")
+    .replace(/-/g, "_")
+    .toLowerCase();
+}
+
 async function createSession(env, userId) {
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -514,6 +842,12 @@ async function ensureSchema(env) {
     "CREATE INDEX IF NOT EXISTS media_post_id_idx ON media(post_id)",
     "CREATE TABLE IF NOT EXISTS saved_decks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, format TEXT NOT NULL, deck_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS saved_decks_user_updated_idx ON saved_decks(user_id, updated_at)",
+    "CREATE TABLE IF NOT EXISTS playground_tables (id TEXT PRIMARY KEY, host_user_id TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, active_snapshot_json TEXT NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS playground_tables_updated_idx ON playground_tables(updated_at)",
+    "CREATE TABLE IF NOT EXISTS playground_seats (table_id TEXT NOT NULL, seat_index INTEGER NOT NULL, user_id TEXT NOT NULL, display_name TEXT NOT NULL, deck_id TEXT NOT NULL, deck_name TEXT NOT NULL, deck_snapshot_json TEXT NOT NULL, joined_at INTEGER NOT NULL, PRIMARY KEY (table_id, seat_index))",
+    "CREATE INDEX IF NOT EXISTS playground_seats_user_idx ON playground_seats(user_id)",
+    "CREATE TABLE IF NOT EXISTS playground_events (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, sequence INTEGER NOT NULL, user_id TEXT NOT NULL, event_type TEXT NOT NULL, event_json TEXT NOT NULL, created_at INTEGER NOT NULL)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS playground_events_table_sequence_idx ON playground_events(table_id, sequence)",
   ];
   for (const statement of statements) {
     await env.DB.prepare(statement).run();

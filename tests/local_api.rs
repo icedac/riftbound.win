@@ -46,6 +46,13 @@ async fn json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).expect("json")
 }
 
+async fn text(response: axum::response::Response) -> String {
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    String::from_utf8(bytes.to_vec()).expect("utf8 body")
+}
+
 fn session_cookie(response: &axum::response::Response) -> String {
     response
         .headers()
@@ -92,6 +99,31 @@ async fn local_api_recreates_schema_if_database_file_is_replaced() {
     .await;
 
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn local_playground_table_deep_link_serves_playground_entrypoint() {
+    let (app, temp) = test_router();
+    let page_dir = temp.path().join("public").join("playground");
+    std::fs::create_dir_all(&page_dir).expect("playground dir");
+    std::fs::write(
+        page_dir.join("index.html"),
+        "<title>Riftbound.kr Playground</title>",
+    )
+    .expect("playground html");
+
+    let response = request(
+        &app,
+        Method::GET,
+        "/playground/tables/table-123",
+        None,
+        None,
+        Body::empty(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(text(response).await.contains("Riftbound.kr Playground"));
 }
 
 #[tokio::test]
@@ -348,4 +380,214 @@ async fn local_saved_deck_roundtrip_requires_current_user() {
     .await;
     assert_eq!(list["decks"].as_array().unwrap().len(), 1);
     assert_eq!(list["decks"][0], created["deck"]);
+}
+
+async fn login(app: &axum::Router, provider: &str) -> String {
+    let response = request(
+        app,
+        Method::GET,
+        &format!("/api/auth/{provider}/start"),
+        None,
+        None,
+        Body::empty(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    session_cookie(&response)
+}
+
+async fn create_test_deck(app: &axum::Router, cookie: &str, name: &str) -> Value {
+    let payload = format!(
+        r#"{{
+          "name": "{name}",
+          "format": "constructed",
+          "deck_json": {{
+            "main": [{{"id": "OGN-001", "quantity": 5}}],
+            "runes": [{{"id": "OGN-R01", "quantity": 2}}]
+          }}
+        }}"#
+    );
+    let response = request(
+        app,
+        Method::POST,
+        "/api/saved-decks",
+        Some(cookie),
+        Some("application/json"),
+        Body::from(payload),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    json(response).await["deck"].clone()
+}
+
+#[tokio::test]
+async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Deck").await;
+    let guest_deck = create_test_deck(&app, &guest_cookie, "Guest Deck").await;
+
+    let unauthorized = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        None,
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().expect("table id");
+    assert_eq!(created["table"]["status"], "waiting");
+    assert_eq!(created["table"]["seats"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        created["table"]["seats"][0]["deck_snapshot"]["main"][0]["id"],
+        "OGN-001"
+    );
+    assert_eq!(
+        created["table"]["seats"][0]["zones"]["main_deck"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+
+    let lobby = json(
+        request(
+            &app,
+            Method::GET,
+            "/api/playground/tables",
+            Some(&host_cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(lobby["tables"].as_array().unwrap().len(), 1);
+    assert_eq!(lobby["tables"][0]["id"], table_id);
+    assert_eq!(lobby["tables"][0]["status"], "waiting");
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+    let joined = json(join).await;
+    assert_eq!(joined["table"]["status"], "active");
+    assert_eq!(joined["table"]["seats"].as_array().unwrap().len(), 2);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+    let started = json(start).await;
+    assert_eq!(started["event"]["sequence"], 1);
+
+    let move_card = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"card.move","payload":{"seat_index":0,"from":"main_deck","to":"hand","count":2}}"#),
+    )
+    .await;
+    assert_eq!(move_card.status(), StatusCode::CREATED);
+    let moved = json(move_card).await;
+    assert_eq!(moved["event"]["sequence"], 2);
+    assert_eq!(
+        moved["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        moved["table"]["seats"][0]["zones"]["main_deck"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+
+    let forged_snapshot = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"card.move","payload":{"active_snapshot_json":{}}}"#),
+    )
+    .await;
+    assert_eq!(forged_snapshot.status(), StatusCode::BAD_REQUEST);
+
+    let events = json(
+        request(
+            &app,
+            Method::GET,
+            &format!("/api/playground/tables/{table_id}/events?after=0"),
+            Some(&guest_cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(events["events"].as_array().unwrap().len(), 2);
+    assert_eq!(events["events"][1]["type"], "card.move");
+
+    let table = json(
+        request(
+            &app,
+            Method::GET,
+            &format!("/api/playground/tables/{table_id}"),
+            Some(&guest_cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        table["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
 }
