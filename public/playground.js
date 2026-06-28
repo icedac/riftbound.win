@@ -1,4 +1,4 @@
-import { replayTableEvents } from "/playground-state.js?v=20260628-playground7";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground8";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -40,6 +40,8 @@ const state = {
   realtimeTableId: "",
   peerConnection: null,
   makingVoiceOffer: false,
+  replayFrames: [],
+  replayIndex: 0,
 };
 
 const els = {
@@ -61,6 +63,9 @@ const els = {
   submitResult: document.querySelector("#submitResult"),
   replayLog: document.querySelector("#replayLog"),
   buildReplay: document.querySelector("#buildReplay"),
+  replayPrev: document.querySelector("#replayPrev"),
+  replayNext: document.querySelector("#replayNext"),
+  replayState: document.querySelector("#replayState"),
   startGame: document.querySelector("#startGame"),
   drawOpening: document.querySelector("#drawOpening"),
   drawRune: document.querySelector("#drawRune"),
@@ -97,6 +102,7 @@ function bindEvents() {
     if (!button) return;
     state.selectedTableId = button.dataset.tableId;
     state.selectedCard = null;
+    resetReplay();
     render();
     syncRealtime();
   });
@@ -151,6 +157,8 @@ function bindEvents() {
     appendAction("result.propose", { result: els.resultSelect.value });
   });
   els.buildReplay.addEventListener("click", renderReplay);
+  els.replayPrev.addEventListener("click", () => stepReplay(-1));
+  els.replayNext.addEventListener("click", () => stepReplay(1));
 }
 
 async function loadProfile() {
@@ -508,6 +516,7 @@ function renderTable() {
     renderSelectedCard();
     renderCardPreview();
     els.voiceStatus.textContent = "Mic idle";
+    resetReplay();
     return;
   }
   els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)}`;
@@ -550,8 +559,50 @@ function eventNode(event) {
 
 function renderReplay() {
   const table = currentTable();
-  const replay = replayTableEvents(table?.events || []);
-  els.replayLog.replaceChildren(...replay.map((event) => text("p", `#${event.sequence} ${event.summary}`)));
+  state.replayFrames = buildReplayFrames(table || {});
+  state.replayIndex = Math.max(0, state.replayFrames.length - 1);
+  renderReplayFrame();
+}
+
+function resetReplay() {
+  state.replayFrames = [];
+  state.replayIndex = 0;
+  renderReplayFrame();
+}
+
+function stepReplay(delta) {
+  if (!state.replayFrames.length) renderReplay();
+  if (!state.replayFrames.length) return;
+  state.replayIndex = Math.max(0, Math.min(state.replayFrames.length - 1, state.replayIndex + delta));
+  renderReplayFrame();
+}
+
+function renderReplayFrame() {
+  if (!state.replayFrames.length) {
+    els.replayState.textContent = "No replay loaded";
+    els.replayPrev.disabled = true;
+    els.replayNext.disabled = true;
+    els.replayLog.replaceChildren(empty("Build replay to inspect saved events."));
+    return;
+  }
+  const frame = state.replayFrames[state.replayIndex];
+  const table = frame.table || {};
+  const replay = replayTableEvents(table.events || []);
+  const status = text("p", `${table.status || "waiting"} · turn ${playerName(table, table.turn_player_id)} · ${replay.length} event(s)`);
+  const seats = (table.seats || []).map((seat) =>
+    text(
+      "p",
+      `${seat.display_name}: hand ${zoneCount(seat, "hand")} · deck ${zoneCount(seat, "main_deck")} · runes ${zoneCount(seat, "rune_pool")} · board ${zoneCount(
+        seat,
+        "battlefield"
+      )} · points ${seat.points || 0}`
+    )
+  );
+  const events = replay.map((event) => text("p", `#${event.sequence} ${event.summary}`));
+  els.replayState.textContent = `${state.replayIndex + 1}/${state.replayFrames.length} · #${frame.sequence} ${frame.summary}`;
+  els.replayPrev.disabled = state.replayIndex <= 0;
+  els.replayNext.disabled = state.replayIndex >= state.replayFrames.length - 1;
+  els.replayLog.replaceChildren(status, ...seats, ...events);
 }
 
 function currentTable() {
@@ -610,6 +661,10 @@ function nextPlayerId() {
 
 function playerName(table, userId) {
   return table?.seats?.find((seat) => seat.user_id === userId)?.display_name || "Player";
+}
+
+function zoneCount(seat, zone) {
+  return seat?.zones?.[zone]?.length || 0;
 }
 
 async function fetchJson(url, fallback) {

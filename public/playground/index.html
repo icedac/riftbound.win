@@ -119,14 +119,19 @@
 
         <section id="replayPanel">
           <h2>Replay</h2>
-          <button id="buildReplay" type="button">Build Replay</button>
+          <div class="replay-controls">
+            <button id="buildReplay" type="button">Build Replay</button>
+            <button id="replayPrev" type="button">Prev</button>
+            <button id="replayNext" type="button">Next</button>
+            <span id="replayState">No replay loaded</span>
+          </div>
           <div id="replayLog" class="replay-log"></div>
         </section>
       </aside>
     </main>
 
     <script src="/brand.js?v=20260628-fixedbrand1" type="module"></script>
-    <script src="/playground.js?v=20260628-playground12" type="module"></script>
+    <script src="/playground.js?v=20260628-playground13" type="module"></script>
     <script src="/auth.js?v=20260628-readiness1" type="module"></script>
     <script src="/perf.js?v=20260628-perf2" type="module"></script>
   </body>

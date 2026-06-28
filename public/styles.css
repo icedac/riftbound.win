@@ -2559,6 +2559,19 @@ dialog::backdrop {
   background: #0f151a;
 }
 
+.replay-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.replay-controls span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .event-log p,
 .chat-log p,
 .replay-log p {

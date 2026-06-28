@@ -46,6 +46,9 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="resultPanel"',
     'id="replayPanel"',
     'src="/playground.js?v=',
+    'id="replayPrev"',
+    'id="replayNext"',
+    'id="replayState"',
     'src="/auth.js?v=',
     'src="/perf.js?v=',
   ]) {
@@ -94,6 +97,16 @@ test("playground exposes point scoring controls and summaries", async () => {
   assert.match(js, /player\.concede/);
   assert.match(js, /els\.concedeGame/);
   assert.match(js, /points \|\| 0/);
+});
+
+test("playground replay can step through reconstructed table frames", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(js, /buildReplayFrames/);
+  assert.match(js, /state\.replayFrames/);
+  assert.match(js, /function renderReplayFrame/);
+  assert.match(js, /els\.replayPrev/);
+  assert.match(js, /els\.replayNext/);
 });
 
 test("playground renders Hearthstone-style seats with card images and hover preview", async () => {

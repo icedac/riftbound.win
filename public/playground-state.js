@@ -70,6 +70,41 @@ export function replayTableEvents(events = []) {
     }));
 }
 
+export function buildReplayFrames(table = {}) {
+  if (!table?.id) return [];
+  const replayTable = initialReplayTable(table);
+  const frames = [
+    {
+      sequence: 0,
+      type: "initial",
+      actor_id: "",
+      summary: "Initial table",
+      created_at: Number(table.created_at || 0),
+      table: clone(replayTable),
+    },
+  ];
+
+  const events = [...(table.events || [])]
+    .sort((a, b) => Number(a.sequence || 0) - Number(b.sequence || 0))
+    .map((event, index) => normalizeReplayEvent(event, index, table));
+
+  for (const event of events) {
+    applyEvent(replayTable, event);
+    replayTable.events.push(clone(event));
+    replayTable.updated_at = event.created_at || replayTable.updated_at;
+    frames.push({
+      sequence: event.sequence,
+      type: event.type,
+      actor_id: event.actor_id,
+      summary: eventSummary(event),
+      created_at: event.created_at,
+      table: clone(replayTable),
+    });
+  }
+
+  return frames;
+}
+
 export function deckSummary(savedDeck = {}, cards = []) {
   const entries = deckEntries(savedDeck.deck_json || savedDeck, cards);
   const counts = entries.reduce(
@@ -95,6 +130,52 @@ function createSeat({ seatIndex, savedDeck = {}, user = {}, now, cards }) {
     joined_at: now,
     points: 0,
     zones: buildZones(deckSnapshot, cards),
+  };
+}
+
+function initialReplayTable(table = {}) {
+  const createdAt = Number(table.created_at || 0);
+  const seats = (table.seats || []).map((seat, index) => replaySeat(seat, index, createdAt));
+  return {
+    id: table.id,
+    status: "waiting",
+    created_at: createdAt,
+    updated_at: createdAt || Number(table.updated_at || 0),
+    started_at: null,
+    completed_at: null,
+    victory_score: Number(table.victory_score || VICTORY_SCORE),
+    turn_player_id: seats[0]?.user_id || table.turn_player_id || "",
+    seats,
+    events: [],
+    chat: [],
+    voice: {},
+    result: { proposals: {}, final: "" },
+  };
+}
+
+function replaySeat(seat = {}, index = 0, createdAt = 0) {
+  const deckSnapshot = clone(seat.deck_snapshot || {});
+  return {
+    seat_index: Number.isFinite(Number(seat.seat_index)) ? Number(seat.seat_index) : index,
+    user_id: seat.user_id || `seat-${index + 1}`,
+    display_name: seat.display_name || "Player",
+    deck_id: seat.deck_id || "",
+    deck_name: seat.deck_name || "Untitled Deck",
+    deck_snapshot: deckSnapshot,
+    joined_at: Number(seat.joined_at || createdAt || 0),
+    points: 0,
+    zones: buildZones(deckSnapshot, []),
+  };
+}
+
+function normalizeReplayEvent(event = {}, index = 0, table = {}) {
+  return {
+    id: event.id || `replay-event-${index + 1}`,
+    sequence: Number(event.sequence || index + 1),
+    actor_id: event.actor_id || "",
+    type: event.type || "unknown",
+    payload: clone(event.payload || {}),
+    created_at: Number(event.created_at || table.updated_at || table.created_at || 0),
   };
 }
 

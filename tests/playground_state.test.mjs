@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   appendTableEvent,
+  buildReplayFrames,
   createPlaygroundTable,
   joinPlaygroundTable,
   replayTableEvents,
@@ -123,6 +124,35 @@ test("joined tables append ordered events, preserve chat and voice state, and re
       [6, "result.propose"],
     ]
   );
+});
+
+test("buildReplayFrames reconstructs table state from the persisted event log", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 }, now: 1300 });
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 1400 });
+
+  const frames = buildReplayFrames(table);
+
+  assert.equal(frames.length, 4);
+  assert.equal(frames[0].summary, "Initial table");
+  assert.equal(frames[0].table.status, "waiting");
+  assert.equal(frames[0].table.seats[0].zones.hand.length, 0);
+  assert.equal(frames[0].table.seats[0].zones.main_deck.length, 5);
+  assert.equal(frames[1].sequence, 1);
+  assert.equal(frames[1].summary, "game.start");
+  assert.equal(frames[1].table.status, "active");
+  assert.equal(frames[1].table.seats[0].zones.hand.length, 4);
+  assert.equal(frames[2].table.seats[0].zones.hand.length, 5);
+  assert.equal(frames[2].table.seats[0].zones.main_deck.length, 0);
+  assert.equal(frames[3].table.turn_player_id, guest.id);
+  assert.equal(frames[3].table.seats[1].zones.hand.length, 5);
+  assert.equal(frames[3].table.seats[1].zones.rune_pool.length, 2);
+  assert.deepEqual(frames[3].table.events.map((event) => event.sequence), [1, 2, 3]);
+
+  frames[1].table.seats[0].zones.hand[0].id = "MUTATED";
+  assert.notEqual(table.seats[0].zones.hand[0].id, "MUTATED");
 });
 
 test("card events can move a selected instance and flip it in place", () => {
