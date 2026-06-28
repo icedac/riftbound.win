@@ -1285,20 +1285,26 @@ fn is_secret_deck_zone(zone: &str) -> bool {
 fn build_playground_zones(deck_json: &Value) -> Value {
     let mut main_deck = Vec::new();
     let mut rune_deck = Vec::new();
+    let mut legend_zone = Vec::new();
+    let mut battlefields = Vec::new();
     for entry in deck_entries(deck_json) {
-        let target = if entry.section == "runes" {
-            &mut rune_deck
-        } else {
-            &mut main_deck
-        };
         for index in 0..entry.quantity {
-            target.push(json!({
+            let card = json!({
                 "id": entry.id,
                 "instance_id": format!("{}-{}-{}", entry.id, entry.section, index + 1),
-            }));
+            });
+            match zone_for_deck_section(&entry.section) {
+                "rune_deck" => rune_deck.push(card),
+                "legend_zone" => legend_zone.push(card),
+                "battlefields" => battlefields.push(card),
+                _ => main_deck.push(card),
+            }
         }
     }
     json!({
+        "legend_zone": legend_zone,
+        "battlefields": battlefields,
+        "base": [],
         "main_deck": main_deck,
         "rune_deck": rune_deck,
         "rune_pool": [],
@@ -1308,6 +1314,15 @@ fn build_playground_zones(deck_json: &Value) -> Value {
         "removed": [],
         "revealed": [],
     })
+}
+
+fn zone_for_deck_section(section: &str) -> &'static str {
+    match zone_name(section).as_str() {
+        "runes" | "rune" | "rune_deck" => "rune_deck",
+        "legends" | "legend" | "legend_zone" => "legend_zone",
+        "battlefields" | "battlefield_cards" => "battlefields",
+        _ => "main_deck",
+    }
 }
 
 struct DeckEntry {

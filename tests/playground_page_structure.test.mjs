@@ -34,6 +34,9 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'value="rune_pool"',
     'id="moveSelectedCard"',
     'id="flipSelectedCard"',
+    'value="base"',
+    'value="legend_zone"',
+    'value="battlefields"',
     'id="scorePoint"',
     'id="eventLog"',
     'id="chatLog"',
@@ -98,6 +101,10 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(html, /id="cardHoverPreview"/);
   assert.match(js, /function orderedSeats/);
   assert.match(js, /orderedSeats\(table\)\.map\(seatZones\)/);
+  assert.match(js, /PLAYGROUND_ZONE_ORDER/);
+  assert.match(js, /legend_zone/);
+  assert.match(js, /battlefields/);
+  assert.match(js, /base/);
   assert.match(js, /function renderCardPreview/);
   assert.match(js, /isHiddenCard/);
   assert.match(js, /function cardImageSrc/);

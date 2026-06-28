@@ -1,4 +1,4 @@
-import { replayTableEvents } from "/playground-state.js?v=20260628-playground5";
+import { replayTableEvents } from "/playground-state.js?v=20260628-playground6";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -12,6 +12,19 @@ import {
 
 const TABLES_API = "/api/playground/tables";
 const POLL_MS = 2500;
+const PLAYGROUND_ZONE_ORDER = [
+  "legend_zone",
+  "battlefields",
+  "base",
+  "main_deck",
+  "rune_deck",
+  "rune_pool",
+  "hand",
+  "battlefield",
+  "discard",
+  "removed",
+  "revealed",
+];
 
 const state = {
   me: null,
@@ -513,7 +526,7 @@ function seatZones(seat) {
   root.append(text("h3", `${seat.display_name} · ${seat.deck_name} · ${seat.points || 0} VP`));
   const zones = document.createElement("div");
   zones.className = "zone-grid";
-  for (const key of ["main_deck", "rune_deck", "rune_pool", "hand", "battlefield", "discard", "removed", "revealed"]) {
+  for (const key of PLAYGROUND_ZONE_ORDER) {
     const zone = document.createElement("div");
     zone.className = "zone-cell";
     zone.append(text("strong", labelZone(key)), text("span", `${seat.zones?.[key]?.length || 0}`));

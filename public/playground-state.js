@@ -100,6 +100,9 @@ function createSeat({ seatIndex, savedDeck = {}, user = {}, now, cards }) {
 
 function buildZones(deckJson = {}, cards = []) {
   const zones = {
+    legend_zone: [],
+    battlefields: [],
+    base: [],
     main_deck: [],
     rune_deck: [],
     rune_pool: [],
@@ -137,12 +140,22 @@ function sectionFromCatalog(id, cards = []) {
   const card = cards.find((item) => String(item.id).toUpperCase() === String(id).toUpperCase());
   const type = String(card?.card_type || "").toLowerCase();
   if (type === "rune") return "runes";
+  if (type === "legend") return "legends";
+  if (type === "battlefield") return "battlefields";
   return "main";
 }
 
 function zoneForEntry(entry, cards) {
   const section = entry.section || sectionFromCatalog(entry.id, cards);
-  return section === "runes" ? "rune_deck" : "main_deck";
+  return zoneForDeckSection(section);
+}
+
+function zoneForDeckSection(section = "") {
+  const normalized = zoneName(section);
+  if (["runes", "rune", "rune_deck"].includes(normalized)) return "rune_deck";
+  if (["legends", "legend", "legend_zone"].includes(normalized)) return "legend_zone";
+  if (["battlefields", "battlefield_cards"].includes(normalized)) return "battlefields";
+  return "main_deck";
 }
 
 function applyEvent(table, event) {

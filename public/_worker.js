@@ -908,6 +908,9 @@ function secretDeckZones() {
 
 function buildPlaygroundZones(deckJson = {}) {
   const zones = {
+    legend_zone: [],
+    battlefields: [],
+    base: [],
     main_deck: [],
     rune_deck: [],
     rune_pool: [],
@@ -918,12 +921,20 @@ function buildPlaygroundZones(deckJson = {}) {
     revealed: [],
   };
   for (const entry of deckEntries(deckJson)) {
-    const zone = entry.section === "runes" ? "rune_deck" : "main_deck";
+    const zone = zoneForDeckSection(entry.section);
     for (let index = 0; index < entry.quantity; index += 1) {
       zones[zone].push({ id: entry.id, instance_id: `${entry.id}-${entry.section}-${index + 1}` });
     }
   }
   return zones;
+}
+
+function zoneForDeckSection(section = "") {
+  const normalized = zoneName(section);
+  if (["runes", "rune", "rune_deck"].includes(normalized)) return "rune_deck";
+  if (["legends", "legend", "legend_zone"].includes(normalized)) return "legend_zone";
+  if (["battlefields", "battlefield_cards"].includes(normalized)) return "battlefields";
+  return "main_deck";
 }
 
 function deckEntries(deckJson = {}) {
