@@ -1,4 +1,5 @@
 import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground16";
+import { playCardMovePayload } from "/playground-actions.js?v=20260628-playcard1";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -157,7 +158,7 @@ function bindEvents() {
   els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 1 }));
   els.drawRune.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "rune_deck", to: "rune_pool", count: 2 }));
   els.revealCard.addEventListener("click", revealSelectedCard);
-  els.moveBattlefield.addEventListener("click", () => (selectedCardRecord() ? moveSelectedCardTo("battlefield") : appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 })));
+  els.moveBattlefield.addEventListener("click", playSelectedCard);
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
   els.exhaustSelectedCard.addEventListener("click", exhaustSelectedCard);
@@ -332,6 +333,19 @@ async function recycleSelectedRune() {
     instance_id: selected.instanceId,
   });
   state.selectedCard = null;
+}
+
+async function playSelectedCard() {
+  const selected = selectedCardRecord();
+  const payload = playCardMovePayload({
+    selected,
+    catalogCard: selected ? catalogCard(selected.card) : null,
+    fallbackSeatIndex: currentSeatIndex(),
+  });
+  if (!payload) return;
+  await appendAction("card.move", payload);
+  if (selected) state.selectedCard = { ...state.selectedCard, zone: payload.to };
+  render();
 }
 
 async function claimSelectedBattlefield() {

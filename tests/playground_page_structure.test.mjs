@@ -87,6 +87,8 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.match(js, /hand\.mulligan/);
   assert.match(js, /rune\.spend/);
   assert.match(js, /rune\.recycle/);
+  assert.match(js, /playground-actions\.js\?v=/);
+  assert.match(js, /function playSelectedCard/);
   assert.match(js, /active_showdown/);
   assert.match(js, /turn\.phase/);
   assert.match(js, /turn_phase/);
