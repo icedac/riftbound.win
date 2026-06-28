@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Riftbound.kr Playground</title>
-    <link rel="stylesheet" href="/styles.css?v=20260628-playground6" />
+    <link rel="stylesheet" href="/styles.css?v=20260628-playground7" />
   </head>
   <body class="page-playground">
     <header class="site-header">
@@ -92,6 +92,12 @@
           <button id="flipSelectedCard" type="button">Flip</button>
           <button id="exhaustSelectedCard" type="button">Exhaust/Ready</button>
           <button id="claimBattlefield" type="button">Claim Battlefield</button>
+          <button id="startShowdown" type="button">Start Showdown</button>
+          <label>
+            Winner
+            <select id="showdownWinnerSelect"></select>
+          </label>
+          <button id="endShowdown" type="button">End Showdown</button>
         </div>
 
         <div id="tableZones" class="table-zones"></div>
@@ -145,7 +151,7 @@
     </main>
 
     <script src="/brand.js?v=20260628-fixedbrand1" type="module"></script>
-    <script src="/playground.js?v=20260628-playground16" type="module"></script>
+    <script src="/playground.js?v=20260628-playground17" type="module"></script>
     <script src="/auth.js?v=20260628-readiness1" type="module"></script>
     <script src="/perf.js?v=20260628-perf2" type="module"></script>
   </body>

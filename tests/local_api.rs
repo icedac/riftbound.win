@@ -1097,6 +1097,118 @@ async fn local_playground_turn_phase_events_persist_in_snapshots() {
 }
 
 #[tokio::test]
+async fn local_playground_showdown_events_track_resolved_control() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_battlefield_test_deck(&app, &host_cookie, "Host Showdown Deck").await;
+    let guest_deck = create_battlefield_test_deck(&app, &guest_cookie, "Guest Showdown Deck").await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+    assert_eq!(created["table"]["active_showdown"], Value::Null);
+    assert!(
+        created["table"]["showdown_history"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+    let started = json(start).await;
+    let battlefield_instance =
+        started["table"]["seats"][0]["zones"]["battlefields"][0]["instance_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    let guest_user_id = started["table"]["seats"][1]["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let showdown = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"showdown.start","payload":{{"seat_index":0,"zone":"battlefields","instance_id":"{battlefield_instance}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(showdown.status(), StatusCode::CREATED);
+    let active = json(showdown).await;
+    assert_eq!(
+        active["table"]["active_showdown"]["battlefield_instance_id"],
+        battlefield_instance
+    );
+
+    let end = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"showdown.end","payload":{{"winner_user_id":"{guest_user_id}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(end.status(), StatusCode::CREATED);
+    let resolved = json(end).await;
+    assert_eq!(resolved["table"]["active_showdown"], Value::Null);
+    assert_eq!(
+        resolved["table"]["showdown_history"][0]["winner_user_id"],
+        guest_user_id
+    );
+    assert_eq!(
+        resolved["table"]["seats"][0]["zones"]["battlefields"][0]["controller_user_id"],
+        guest_user_id
+    );
+    assert_eq!(
+        resolved["table"]["seats"][0]["zones"]["battlefields"][0]["last_showdown_winner"],
+        guest_user_id
+    );
+}
+
+#[tokio::test]
 async fn local_playground_battlefield_claim_scores_source_points() {
     let (app, _temp) = test_router();
     let host_cookie = login(&app, "google").await;

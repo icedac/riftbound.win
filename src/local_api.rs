@@ -1187,6 +1187,8 @@ fn create_table_snapshot(
         "events": [],
         "chat": [],
         "voice": {},
+        "active_showdown": null,
+        "showdown_history": [],
         "result": { "proposals": {}, "final": "" },
     })
 }
@@ -1481,6 +1483,8 @@ fn active_playground_event_type(value: &str) -> bool {
             | "card.flip"
             | "card.exhaust"
             | "battlefield.claim"
+            | "showdown.start"
+            | "showdown.end"
             | "turn.phase"
             | "turn.pass"
             | "score.point"
@@ -1497,6 +1501,8 @@ fn turn_scoped_playground_event_type(value: &str) -> bool {
             | "card.flip"
             | "card.exhaust"
             | "battlefield.claim"
+            | "showdown.start"
+            | "showdown.end"
             | "turn.phase"
             | "turn.pass"
             | "score.point"
@@ -1537,6 +1543,12 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     }
     if event_type == "battlefield.claim" {
         apply_battlefield_claim(table, event);
+    }
+    if event_type == "showdown.start" {
+        apply_showdown_start(table, event);
+    }
+    if event_type == "showdown.end" {
+        apply_showdown_end(table, event);
     }
     if event_type == "turn.phase" {
         apply_turn_phase(table, event);
@@ -1604,6 +1616,96 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         apply_result_proposal(table, event);
     }
     push_array_value(table, "events", event.clone());
+}
+
+fn apply_showdown_start(table: &mut Value, event: &Value) {
+    let (battlefield_instance_id, battlefield_card_id) = {
+        let Some(card) = selected_zone_card(table, &event["payload"], "battlefields") else {
+            return;
+        };
+        let battlefield_instance_id = card
+            .get("instance_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let battlefield_card_id = card
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        if let Some(card) = card.as_object_mut() {
+            card.insert("contested".to_string(), json!(true));
+            card.insert(
+                "showdown_started_at".to_string(),
+                event["created_at"].clone(),
+            );
+        }
+        (battlefield_instance_id, battlefield_card_id)
+    };
+    let actor_id = event["actor_id"].as_str().unwrap_or_default().to_string();
+    let attacker_user_id = event["payload"]
+        .get("attacker_user_id")
+        .and_then(Value::as_str)
+        .unwrap_or(&actor_id)
+        .to_string();
+    let defender_user_id = event["payload"]
+        .get("defender_user_id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| next_playground_user_id(table, &actor_id));
+    table["active_showdown"] = json!({
+        "status": "active",
+        "battlefield_instance_id": battlefield_instance_id,
+        "battlefield_card_id": battlefield_card_id,
+        "started_by_user_id": actor_id,
+        "attacker_user_id": attacker_user_id,
+        "defender_user_id": defender_user_id,
+        "started_at": event["created_at"],
+    });
+}
+
+fn apply_showdown_end(table: &mut Value, event: &Value) {
+    let Some(active) = table
+        .get("active_showdown")
+        .filter(|value| value.is_object())
+        .cloned()
+    else {
+        return;
+    };
+    let battlefield_instance_id = active
+        .get("battlefield_instance_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let winner_user_id = event["payload"]
+        .get("winner_user_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let mut record = active.clone();
+    if let Some(record) = record.as_object_mut() {
+        record.insert("status".to_string(), json!("completed"));
+        record.insert("winner_user_id".to_string(), json!(winner_user_id.clone()));
+        record.insert("ended_by_user_id".to_string(), event["actor_id"].clone());
+        record.insert("ended_at".to_string(), event["created_at"].clone());
+    }
+    push_array_value(table, "showdown_history", record);
+    table["active_showdown"] = Value::Null;
+    let Some(card) = find_zone_card(table, "battlefields", &battlefield_instance_id) else {
+        return;
+    };
+    if let Some(card) = card.as_object_mut() {
+        card.insert("contested".to_string(), json!(false));
+        card.insert(
+            "last_showdown_winner".to_string(),
+            json!(winner_user_id.clone()),
+        );
+        card.insert("last_showdown_at".to_string(), event["created_at"].clone());
+        if !winner_user_id.is_empty() {
+            card.insert("controller_user_id".to_string(), json!(winner_user_id));
+            card.insert("conquered_at".to_string(), event["created_at"].clone());
+        }
+    }
 }
 
 fn apply_turn_phase(table: &mut Value, event: &Value) {
@@ -2188,6 +2290,8 @@ fn valid_playground_event_type(value: &str) -> bool {
             | "card.flip"
             | "card.exhaust"
             | "battlefield.claim"
+            | "showdown.start"
+            | "showdown.end"
             | "turn.phase"
             | "turn.pass"
             | "chat.message"

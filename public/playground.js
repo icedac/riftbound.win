@@ -81,6 +81,9 @@ const els = {
   flipSelectedCard: document.querySelector("#flipSelectedCard"),
   exhaustSelectedCard: document.querySelector("#exhaustSelectedCard"),
   claimBattlefield: document.querySelector("#claimBattlefield"),
+  startShowdown: document.querySelector("#startShowdown"),
+  showdownWinnerSelect: document.querySelector("#showdownWinnerSelect"),
+  endShowdown: document.querySelector("#endShowdown"),
   cardPreview: document.querySelector("#cardHoverPreview"),
   passTurn: document.querySelector("#passTurn"),
 };
@@ -147,6 +150,8 @@ function bindEvents() {
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
   els.exhaustSelectedCard.addEventListener("click", exhaustSelectedCard);
   els.claimBattlefield.addEventListener("click", claimSelectedBattlefield);
+  els.startShowdown.addEventListener("click", startSelectedShowdown);
+  els.endShowdown.addEventListener("click", endCurrentShowdown);
   els.scorePoint.addEventListener("click", () => appendAction("score.point", scorePayload()));
   els.concedeGame.addEventListener("click", () => appendAction("player.concede", { user_id: currentUserId() }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
@@ -302,6 +307,24 @@ async function claimSelectedBattlefield() {
     zone: selected.zone,
     instance_id: selected.instanceId,
   });
+}
+
+async function startSelectedShowdown() {
+  const selected = selectedCardRecord();
+  if (!selected || selected.zone !== "battlefields") return;
+  await appendAction("showdown.start", {
+    seat_index: selected.seatIndex,
+    zone: selected.zone,
+    instance_id: selected.instanceId,
+    attacker_user_id: currentUserId(),
+    defender_user_id: nextPlayerId(),
+  });
+}
+
+async function endCurrentShowdown() {
+  const table = currentTable();
+  if (!table?.active_showdown) return;
+  await appendAction("showdown.end", { winner_user_id: els.showdownWinnerSelect.value || "" });
 }
 
 function scorePayload() {
@@ -540,6 +563,7 @@ function renderTable() {
   const table = currentTable();
   const controlsDisabled = !table || !state.me || !currentSeat();
   const phaseControlsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
+  const selected = selectedCardRecord();
   els.startGame.disabled = !canStartTable(table);
   for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.concedeGame, els.passTurn, els.submitResult]) {
     control.disabled = !isTableActive(table) || controlsDisabled;
@@ -548,9 +572,12 @@ function renderTable() {
   els.setTurnPhase.disabled = phaseControlsDisabled;
   els.toggleVoice.disabled = controlsDisabled;
   for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard, els.claimBattlefield]) {
-    control.disabled = !isTableActive(table) || controlsDisabled || !selectedCardRecord();
+    control.disabled = !isTableActive(table) || controlsDisabled || !selected;
   }
-  els.claimBattlefield.disabled = els.claimBattlefield.disabled || selectedCardRecord()?.zone !== "battlefields";
+  els.claimBattlefield.disabled = els.claimBattlefield.disabled || selected?.zone !== "battlefields";
+  els.startShowdown.disabled = !isTableActive(table) || controlsDisabled || !selected || selected.zone !== "battlefields";
+  els.showdownWinnerSelect.disabled = !isTableActive(table) || controlsDisabled || !table?.active_showdown;
+  els.endShowdown.disabled = !isTableActive(table) || controlsDisabled || !table?.active_showdown;
   if (!table) {
     state.selectedCard = null;
     els.tableTitle.textContent = "No table selected";
@@ -560,13 +587,15 @@ function renderTable() {
     renderSelectedCard();
     renderCardPreview();
     els.voiceStatus.textContent = "Mic idle";
+    renderShowdownWinnerOptions(null);
     resetReplay();
     return;
   }
   els.turnPhaseSelect.value = labelTurnPhaseValue(table.turn_phase);
+  renderShowdownWinnerOptions(table);
   els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)} · ${labelTurnPhase(
     table.turn_phase
-  )} ${Number(table.turn_number || 0)}`;
+  )} ${Number(table.turn_number || 0)}${table.active_showdown ? " · showdown" : ""}`;
   els.tableZones.replaceChildren(...orderedSeats(table).map(seatZones));
   renderSelectedCard();
   renderCardPreview();
@@ -754,6 +783,8 @@ function eventSummary(event) {
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
   if (event.type === "battlefield.claim") return "battlefield claimed";
+  if (event.type === "showdown.start") return "showdown started";
+  if (event.type === "showdown.end") return `showdown ended${event.payload?.winner_user_id ? `: ${playerName(currentTable(), event.payload.winner_user_id)}` : ""}`;
   if (event.type === "turn.phase") return `phase ${labelTurnPhase(event.payload?.phase)}`;
   if (event.type === "score.point") return `${event.payload?.source === "battlefield" ? "score battlefield" : "score"} +${event.payload?.amount || 1}`;
   if (event.type === "player.concede") return "conceded";
@@ -778,6 +809,15 @@ function labelTurnPhaseValue(value) {
 
 function labelTurnPhase(value) {
   return labelTurnPhaseValue(value).replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function renderShowdownWinnerOptions(table) {
+  const currentValue = els.showdownWinnerSelect.value;
+  const seats = table?.seats || [];
+  els.showdownWinnerSelect.replaceChildren(option("", "No winner"), ...seats.map((seat) => option(seat.user_id, seat.display_name || "Player")));
+  els.showdownWinnerSelect.value = seats.some((seat) => seat.user_id === currentValue)
+    ? currentValue
+    : table?.active_showdown?.attacker_user_id || currentUserId();
 }
 
 function selectedCardRecord(selected = state.selectedCard) {
@@ -840,6 +880,7 @@ function cardChip(card, seat, zone) {
     card.face_up === false ? "face-down" : "",
     card.exhausted === true ? "exhausted" : "",
     card.controller_user_id ? "controlled" : "",
+    card.contested === true ? "contested" : "",
     selected?.instanceId === card.instance_id ? "selected" : "",
   ]
     .filter(Boolean)

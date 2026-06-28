@@ -36,6 +36,9 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="flipSelectedCard"',
     'id="exhaustSelectedCard"',
     'id="claimBattlefield"',
+    'id="startShowdown"',
+    'id="showdownWinnerSelect"',
+    'id="endShowdown"',
     'value="base"',
     'value="legend_zone"',
     'value="battlefields"',
@@ -70,6 +73,9 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.match(js, /card\.flip/);
   assert.match(js, /card\.exhaust/);
   assert.match(js, /battlefield\.claim/);
+  assert.match(js, /showdown\.start/);
+  assert.match(js, /showdown\.end/);
+  assert.match(js, /active_showdown/);
   assert.match(js, /turn\.phase/);
   assert.match(js, /turn_phase/);
   assert.match(js, /WebSocket/);

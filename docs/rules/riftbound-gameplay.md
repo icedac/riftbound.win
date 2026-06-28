@@ -44,6 +44,7 @@ Playground implication:
 - Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
 - Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.phase` records the current phase label (`ready`, `score`, `channel`, `draw`, `main`, or `end`) in snapshots, logs, and replay. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes, draws 1, increments `turn_number`, and returns `turn_phase` to `main`.
 - Battlefield control is modeled manually with `battlefield.claim`, which marks a public battlefield card with `controller_user_id`. Scoring from a selected battlefield sends `score.point` with `source: "battlefield"` and stores `last_scored_by` on that battlefield for logs and replay.
+- Showdowns are modeled manually with `showdown.start` and `showdown.end`. Starting a showdown records the contested battlefield in `active_showdown` and marks that battlefield as `contested`; ending it appends `showdown_history`, clears `active_showdown`, and, when a winner is chosen, assigns battlefield control to that winner.
 - Store turn state on the table snapshot, not only in the event log, so replay can rebuild it deterministically.
 
 ## Core Actions To Model Next
@@ -61,6 +62,7 @@ Playground implication:
 - Current `card.move`, `card.reveal`, and `card.flip` are the right primitive operations for manual play.
 - `card.exhaust` is the current primitive for sideways/ready state. It is intentionally manual; later resource payment automation can consume this same state rather than replacing the event log format.
 - `battlefield.claim` plus battlefield-sourced `score.point` is the current primitive for manual hold/conquer scoring. Later battlefield control automation should reduce into these same event shapes.
+- `showdown.start` plus `showdown.end` is the current primitive for contested battlefield resolution. It does not judge damage, action windows, or card text yet; it records the shared battlefield window and the agreed winner so the replay can show why control changed.
 - Add higher-level buttons only when their event payloads can still replay into the same primitive zone changes.
 
 ## Victory And Results
@@ -73,12 +75,12 @@ Playground implication:
 
 Playground implication:
 - Keep mutual result confirmation as a correction/override path.
-- The next step is to add stronger battlefield legality checks around the current manual claim/score flow.
+- The next step is to add stronger battlefield legality checks around the current manual claim/score/showdown flow.
 
 ## Engine Backlog
 
 - Add temporary rune/resource pool state separate from channeled rune cards.
 - Add public/private/secret card masking.
 - Add automated battlefield scoring and control checks.
-- Add action legality for turn player, reactions, chain, and showdown state.
+- Add action legality for turn player, reactions, chain, and detailed showdown state.
 - Add replay snapshots or deterministic reducers for every new event type.

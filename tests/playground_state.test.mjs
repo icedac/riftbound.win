@@ -103,6 +103,39 @@ test("battlefield claims mark control and battlefield scoring records the source
   assert.equal(buildReplayFrames(table).at(-1).table.seats[0].zones.battlefields[0].controller_user_id, host.id);
 });
 
+test("showdown events track the contested battlefield and resolved control", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: battlefieldDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: battlefieldDeck("deck-2"), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  const battlefield = table.seats[0].zones.battlefields[0];
+
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "showdown.start",
+    payload: { seat_index: 0, zone: "battlefields", instance_id: battlefield.instance_id },
+    now: 1300,
+  });
+
+  assert.equal(table.active_showdown.battlefield_instance_id, battlefield.instance_id);
+  assert.equal(table.active_showdown.started_by_user_id, host.id);
+
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "showdown.end",
+    payload: { winner_user_id: guest.id },
+    now: 1400,
+  });
+
+  assert.equal(table.active_showdown, null);
+  assert.equal(table.showdown_history.length, 1);
+  assert.equal(table.showdown_history[0].winner_user_id, guest.id);
+  assert.equal(table.seats[0].zones.battlefields[0].controller_user_id, guest.id);
+  assert.equal(table.seats[0].zones.battlefields[0].last_showdown_winner, guest.id);
+  assert.equal(replayTableEvents(table.events)[1].summary, "Showdown started");
+  assert.equal(replayTableEvents(table.events)[2].summary, "Showdown ended");
+  assert.equal(buildReplayFrames(table).at(-1).table.showdown_history[0].winner_user_id, guest.id);
+});
+
 test("turn phase events are logged and replayed", () => {
   let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
   table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });

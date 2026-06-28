@@ -21,6 +21,8 @@ export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW()
     events: [],
     chat: [],
     voice: {},
+    active_showdown: null,
+    showdown_history: [],
     result: { proposals: {}, final: "" },
   };
   return table;
@@ -156,6 +158,8 @@ function initialReplayTable(table = {}) {
     events: [],
     chat: [],
     voice: {},
+    active_showdown: null,
+    showdown_history: [],
     result: { proposals: {}, final: "" },
   };
 }
@@ -261,6 +265,8 @@ function applyEvent(table, event) {
   if (event.type === "card.flip") applyFlip(table, event.payload);
   if (event.type === "card.exhaust") applyExhaust(table, event.payload);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
+  if (event.type === "showdown.start") applyShowdownStart(table, event);
+  if (event.type === "showdown.end") applyShowdownEnd(table, event);
   if (event.type === "turn.phase") applyTurnPhase(table, event);
   if (event.type === "turn.pass") {
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
@@ -328,6 +334,47 @@ function applyBattlefieldClaim(table, event) {
   if (!battlefield) return;
   battlefield.controller_user_id = event.actor_id || "";
   battlefield.claimed_at = event.created_at;
+}
+
+function applyShowdownStart(table, event) {
+  const battlefield = selectedZoneCard(table, event.payload || {}, "battlefields");
+  if (!battlefield) return;
+  const actorId = event.actor_id || "";
+  table.active_showdown = {
+    status: "active",
+    battlefield_instance_id: battlefield.instance_id,
+    battlefield_card_id: battlefield.id,
+    started_by_user_id: actorId,
+    attacker_user_id: event.payload.attacker_user_id || actorId,
+    defender_user_id: event.payload.defender_user_id || nextSeatUserId(table, actorId),
+    started_at: event.created_at,
+  };
+  battlefield.contested = true;
+  battlefield.showdown_started_at = event.created_at;
+}
+
+function applyShowdownEnd(table, event) {
+  const active = table.active_showdown;
+  if (!active) return;
+  const winnerUserId = event.payload.winner_user_id || "";
+  table.showdown_history ||= [];
+  table.showdown_history.push({
+    ...clone(active),
+    status: "completed",
+    winner_user_id: winnerUserId,
+    ended_by_user_id: event.actor_id || "",
+    ended_at: event.created_at,
+  });
+  table.active_showdown = null;
+  const battlefield = findZoneCard(table, "battlefields", active.battlefield_instance_id);
+  if (!battlefield) return;
+  battlefield.contested = false;
+  battlefield.last_showdown_winner = winnerUserId;
+  battlefield.last_showdown_at = event.created_at;
+  if (winnerUserId) {
+    battlefield.controller_user_id = winnerUserId;
+    battlefield.conquered_at = event.created_at;
+  }
 }
 
 function applyTurnPhase(table, event) {
@@ -497,6 +544,8 @@ function eventSummary(event) {
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
   if (event.type === "battlefield.claim") return "Battlefield claimed";
+  if (event.type === "showdown.start") return "Showdown started";
+  if (event.type === "showdown.end") return "Showdown ended";
   if (event.type === "turn.phase") return `Turn phase: ${normalizeTurnPhase(event.payload?.phase)}`;
   if (event.type === "score.point") return `${event.payload?.source === "battlefield" ? "Score battlefield" : "Score point"}: +${scoreAmount(event.payload?.amount)}`;
   if (event.type === "player.concede") return "Player conceded";

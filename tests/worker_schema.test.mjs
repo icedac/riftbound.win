@@ -989,6 +989,56 @@ test("worker records turn phase events in snapshots and logs", async () => {
   assert.equal(db.playgroundEvents.at(-1).event_type, "turn.pass");
 });
 
+test("worker records showdown start and end state", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  const started = await postPlaygroundEvent(env, table.id, "host-session", "game.start").then((response) => response.json());
+  const battlefield = started.table.seats[0].zones.battlefields[0];
+  const showdown = await postPlaygroundEvent(env, table.id, "host-session", "showdown.start", {
+    seat_index: 0,
+    zone: "battlefields",
+    instance_id: battlefield.instance_id,
+  });
+
+  assert.equal(showdown.status, 201);
+  const active = await showdown.json();
+  assert.equal(active.table.active_showdown.battlefield_instance_id, battlefield.instance_id);
+  assert.equal(active.table.active_showdown.started_by_user_id, "host-user");
+
+  const end = await postPlaygroundEvent(env, table.id, "host-session", "showdown.end", {
+    winner_user_id: "guest-user",
+  });
+
+  assert.equal(end.status, 201);
+  const resolved = await end.json();
+  assert.equal(resolved.table.active_showdown, null);
+  assert.equal(resolved.table.showdown_history[0].winner_user_id, "guest-user");
+  assert.equal(resolved.table.seats[0].zones.battlefields[0].controller_user_id, "guest-user");
+  assert.equal(resolved.table.seats[0].zones.battlefields[0].last_showdown_winner, "guest-user");
+  assert.equal(db.playgroundEvents.at(-2).event_type, "showdown.start");
+  assert.equal(db.playgroundEvents.at(-1).event_type, "showdown.end");
+});
+
 test("worker persists battlefield claim control and source scoring", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db);
