@@ -372,56 +372,20 @@ async function mediaResponse(env, encodedKey) {
 
 async function ensureSchema(env) {
   if (!env.DB) return false;
-  await env.DB.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      display_name TEXT NOT NULL,
-      bio TEXT NOT NULL DEFAULT '',
-      avatar_key TEXT NOT NULL DEFAULT '',
-      avatar_type TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS providers (
-      provider TEXT NOT NULL,
-      provider_user_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      email TEXT NOT NULL DEFAULT '',
-      display_name TEXT NOT NULL DEFAULT '',
-      avatar_url TEXT NOT NULL DEFAULT '',
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (provider, provider_user_id)
-    );
-    CREATE INDEX IF NOT EXISTS providers_user_id_idx ON providers(user_id);
-    CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      created_at INTEGER NOT NULL,
-      expires_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
-    CREATE TABLE IF NOT EXISTS posts (
-      id TEXT PRIMARY KEY,
-      board TEXT NOT NULL,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL DEFAULT '',
-      user_id TEXT,
-      author_name TEXT NOT NULL DEFAULT 'Guest',
-      votes INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS posts_board_created_idx ON posts(board, created_at);
-    CREATE TABLE IF NOT EXISTS media (
-      id TEXT PRIMARY KEY,
-      post_id TEXT NOT NULL,
-      key TEXT NOT NULL,
-      media_type TEXT NOT NULL,
-      mime_type TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS media_post_id_idx ON media(post_id);
-  `);
+  const statements = [
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, display_name TEXT NOT NULL, bio TEXT NOT NULL DEFAULT '', avatar_key TEXT NOT NULL DEFAULT '', avatar_type TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS providers (provider TEXT NOT NULL, provider_user_id TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', display_name TEXT NOT NULL DEFAULT '', avatar_url TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (provider, provider_user_id))",
+    "CREATE INDEX IF NOT EXISTS providers_user_id_idx ON providers(user_id)",
+    "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)",
+    "CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, board TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', user_id TEXT, author_name TEXT NOT NULL DEFAULT 'Guest', votes INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS posts_board_created_idx ON posts(board, created_at)",
+    "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, post_id TEXT NOT NULL, key TEXT NOT NULL, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, created_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS media_post_id_idx ON media(post_id)",
+  ];
+  for (const statement of statements) {
+    await env.DB.prepare(statement).run();
+  }
   return true;
 }
 
