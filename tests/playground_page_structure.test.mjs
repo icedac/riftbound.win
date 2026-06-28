@@ -26,6 +26,8 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="playgroundDecks"',
     'id="playgroundTable"',
     'id="tableZones"',
+    'id="dealOpening"',
+    'id="mulliganSelected"',
     'id="drawOpening"',
     'id="drawRune"',
     'id="shuffleMainDeck"',
@@ -79,6 +81,8 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.match(js, /showdown\.start/);
   assert.match(js, /showdown\.end/);
   assert.match(js, /deck\.shuffle/);
+  assert.match(js, /setup\.deal/);
+  assert.match(js, /hand\.mulligan/);
   assert.match(js, /active_showdown/);
   assert.match(js, /turn\.phase/);
   assert.match(js, /turn_phase/);

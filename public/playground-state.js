@@ -12,6 +12,7 @@ export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW()
     updated_at: now,
     started_at: null,
     completed_at: null,
+    setup_dealt_at: null,
     victory_score: VICTORY_SCORE,
     turn_player_id: user?.id || "",
     turn_phase: "setup",
@@ -149,6 +150,7 @@ function initialReplayTable(table = {}) {
     updated_at: createdAt || Number(table.updated_at || 0),
     started_at: null,
     completed_at: null,
+    setup_dealt_at: null,
     victory_score: Number(table.victory_score || VICTORY_SCORE),
     turn_player_id: seats[0]?.user_id || table.turn_player_id || "",
     turn_phase: "setup",
@@ -252,8 +254,9 @@ function zoneForDeckSection(section = "") {
 }
 
 function applyEvent(table, event) {
+  if (event.type === "setup.deal") applySetupDeal(table, event);
   if (event.type === "game.start") {
-    if (!table.started_at) drawOpeningHands(table);
+    if (!table.setup_dealt_at) dealOpeningHands(table, event.created_at);
     table.status = "active";
     table.started_at = table.started_at || event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats[0]?.user_id || "";
@@ -266,6 +269,7 @@ function applyEvent(table, event) {
   if (event.type === "card.flip") applyFlip(table, event.payload);
   if (event.type === "card.exhaust") applyExhaust(table, event.payload);
   if (event.type === "deck.shuffle") applyDeckShuffle(table, event);
+  if (event.type === "hand.mulligan") applyHandMulligan(table, event);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
   if (event.type === "showdown.start") applyShowdownStart(table, event);
   if (event.type === "showdown.end") applyShowdownEnd(table, event);
@@ -429,6 +433,16 @@ function resultForSeat(table, seat) {
   return `${seat.user_id}-win`;
 }
 
+function applySetupDeal(table, event) {
+  dealOpeningHands(table, event.created_at);
+}
+
+function dealOpeningHands(table, dealtAt) {
+  if (table.setup_dealt_at) return;
+  drawOpeningHands(table);
+  table.setup_dealt_at = dealtAt || table.updated_at || table.created_at || null;
+}
+
 function drawOpeningHands(table) {
   for (const seat of table.seats || []) {
     moveCards(seat, "main_deck", "hand", 4);
@@ -466,6 +480,29 @@ function applyDeckShuffle(table, event) {
     if (leftRank !== rightRank) return leftRank - rightRank;
     return cardInstanceKey(left).localeCompare(cardInstanceKey(right));
   });
+}
+
+function applyHandMulligan(table, event) {
+  const seat = table.seats?.[Number(event.payload?.seat_index || 0)];
+  const hand = seat?.zones?.hand;
+  const deck = seat?.zones?.main_deck;
+  if (!Array.isArray(hand) || !Array.isArray(deck)) return;
+  const instanceIds = mulliganInstanceIds(event.payload);
+  const returned = [];
+  for (const instanceId of instanceIds) {
+    const index = hand.findIndex((card) => card.instance_id === instanceId);
+    if (index >= 0) returned.push(...hand.splice(index, 1));
+  }
+  if (!returned.length) return;
+  deck.push(...returned);
+  applyDeckShuffle(table, { ...event, payload: { ...event.payload, zone: "main_deck" } });
+  moveCards(seat, "main_deck", "hand", returned.length);
+}
+
+function mulliganInstanceIds(payload = {}) {
+  if (Array.isArray(payload.instance_ids)) return payload.instance_ids.map(String).filter(Boolean);
+  if (payload.instance_id) return [String(payload.instance_id)];
+  return [];
 }
 
 function deckShuffleZone(value) {
@@ -579,10 +616,12 @@ function nextSeatUserId(table, actorId) {
 }
 
 function eventSummary(event) {
+  if (event.type === "setup.deal") return "Deal opening hands";
   if (event.type === "card.move") return `${event.payload.count || 1} card(s): ${event.payload.from} -> ${event.payload.to}`;
   if (event.type === "card.flip") return `Flip selected card in ${event.payload.zone || "battlefield"} ${event.payload.face_up === false ? "face down" : "face up"}`;
   if (event.type === "card.exhaust") return `${event.payload.exhausted === false ? "Ready" : "Exhaust"} selected card in ${event.payload.zone || "battlefield"}`;
   if (event.type === "deck.shuffle") return `Shuffle ${deckShuffleZone(event.payload?.zone)}`;
+  if (event.type === "hand.mulligan") return `Mulligan ${mulliganInstanceIds(event.payload).length || 1} card(s)`;
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
   if (event.type === "battlefield.claim") return "Battlefield claimed";

@@ -176,6 +176,37 @@ test("deck shuffle reorders deck piles while replay stays deterministic", () => 
   assert.deepEqual(buildReplayFrames(table).at(-1).table.seats[0].zones.main_deck.map((card) => card.instance_id), after);
 });
 
+test("setup deal and hand mulligan keep opening setup replayable", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
+
+  table = appendTableEvent(table, { actorId: host.id, type: "setup.deal", payload: {}, now: 1200 });
+
+  assert.equal(table.status, "waiting");
+  assert.equal(table.setup_dealt_at, 1200);
+  assert.equal(table.seats[0].zones.hand.length, 4);
+  assert.equal(table.seats[0].zones.main_deck.length, 1);
+  assert.equal(table.seats[1].zones.hand.length, 4);
+
+  const selected = table.seats[0].zones.hand[1].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "hand.mulligan",
+    payload: { seat_index: 0, instance_id: selected, seed: "mulligan" },
+    now: 1300,
+  });
+
+  assert.equal(table.seats[0].zones.hand.length, 4);
+  assert.equal(table.seats[0].zones.main_deck.length, 1);
+  assert.equal(table.seats[0].zones.hand.some((card) => card.instance_id === selected), false);
+  assert.equal(replayTableEvents(table.events)[1].summary, "Mulligan 1 card(s)");
+
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1400 });
+  assert.equal(table.status, "active");
+  assert.equal(table.seats[0].zones.hand.length, 4);
+  assert.equal(buildReplayFrames(table).at(-1).table.seats[0].zones.hand.length, 4);
+});
+
 test("player concession completes a table for the opponent", () => {
   let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
   table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });

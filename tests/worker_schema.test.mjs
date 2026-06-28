@@ -1029,6 +1029,65 @@ test("worker allows owners to shuffle deck piles before game start", async () =>
   assert.equal(db.playgroundEvents.at(-1).event_type, "deck.shuffle");
 });
 
+test("worker supports opening setup deal and owner mulligan before game start", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  const guestDeal = await postPlaygroundEvent(env, table.id, "guest-session", "setup.deal");
+  assert.equal(guestDeal.status, 403);
+
+  const deal = await postPlaygroundEvent(env, table.id, "host-session", "setup.deal");
+  assert.equal(deal.status, 201);
+  const dealt = await deal.json();
+  assert.equal(dealt.table.status, "waiting");
+  assert.equal(dealt.table.seats[0].zones.hand.length, 4);
+  assert.equal(dealt.table.seats[1].zones.hand.length, 4);
+
+  const selected = dealt.table.seats[0].zones.hand[1].instance_id;
+  const guestMulligan = await postPlaygroundEvent(env, table.id, "guest-session", "hand.mulligan", {
+    seat_index: 0,
+    instance_id: selected,
+    seed: "mulligan",
+  });
+  assert.equal(guestMulligan.status, 403);
+
+  const mulligan = await postPlaygroundEvent(env, table.id, "host-session", "hand.mulligan", {
+    seat_index: 0,
+    instance_id: selected,
+    seed: "mulligan",
+  });
+  assert.equal(mulligan.status, 201);
+  const mulliganed = await mulligan.json();
+  assert.equal(mulliganed.table.seats[0].zones.hand.length, 4);
+  assert.equal(mulliganed.table.seats[0].zones.hand.some((card) => card.instance_id === selected), false);
+
+  const start = await postPlaygroundEvent(env, table.id, "host-session", "game.start");
+  assert.equal(start.status, 201);
+  const started = await start.json();
+  assert.equal(started.table.status, "active");
+  assert.equal(started.table.seats[0].zones.hand.length, 4);
+  assert.equal(db.playgroundEvents.map((event) => event.event_type).join(","), "setup.deal,hand.mulligan,game.start");
+});
+
 test("worker records turn phase events in snapshots and logs", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db);

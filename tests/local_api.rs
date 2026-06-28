@@ -1180,6 +1180,148 @@ async fn local_playground_shuffle_is_allowed_before_start() {
 }
 
 #[tokio::test]
+async fn local_playground_setup_deal_and_mulligan_before_start() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Setup Deck").await;
+    let guest_deck = create_test_deck(&app, &guest_cookie, "Guest Setup Deck").await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let guest_deal = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"setup.deal","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(guest_deal.status(), StatusCode::FORBIDDEN);
+
+    let deal = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"setup.deal","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(deal.status(), StatusCode::CREATED);
+    let dealt = json(deal).await;
+    assert_eq!(dealt["table"]["status"], "waiting");
+    assert_eq!(
+        dealt["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        dealt["table"]["seats"][1]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    let selected = dealt["table"]["seats"][0]["zones"]["hand"][1]["instance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let guest_mulligan = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"hand.mulligan","payload":{{"seat_index":0,"instance_id":"{selected}","seed":"mulligan"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(guest_mulligan.status(), StatusCode::FORBIDDEN);
+
+    let mulligan = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"hand.mulligan","payload":{{"seat_index":0,"instance_id":"{selected}","seed":"mulligan"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(mulligan.status(), StatusCode::CREATED);
+    let mulliganed = json(mulligan).await;
+    assert_eq!(
+        mulliganed["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert!(
+        !mulliganed["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|card| card["instance_id"] == selected)
+    );
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+    let started = json(start).await;
+    assert_eq!(started["table"]["status"], "active");
+    assert_eq!(
+        started["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+}
+
+#[tokio::test]
 async fn local_playground_turn_phase_events_persist_in_snapshots() {
     let (app, _temp) = test_router();
     let host_cookie = login(&app, "google").await;

@@ -698,6 +698,11 @@ async fn append_playground_event(
             Json(json!({ "error": "Table is completed" })),
         )
             .into_response(),
+        Err(error) if error.to_string().contains("Setup is closed") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Setup is closed" })),
+        )
+            .into_response(),
         Err(error) if error.to_string().contains("Game has not started") => (
             StatusCode::CONFLICT,
             Json(json!({ "error": "Game has not started" })),
@@ -1178,6 +1183,7 @@ fn create_table_snapshot(
         "updated_at": now,
         "started_at": null,
         "completed_at": null,
+        "setup_dealt_at": null,
         "victory_score": PLAYGROUND_VICTORY_SCORE,
         "turn_player_id": user.id,
         "turn_phase": "setup",
@@ -1391,6 +1397,18 @@ fn validate_playground_event(
     event_type: &str,
     payload: &Value,
 ) -> Result<()> {
+    if event_type == "setup.deal" {
+        if playground_host_user_id(table) != Some(user.id.as_str()) {
+            anyhow::bail!("Table host required");
+        }
+        if playground_seat_len(table) < 2 {
+            anyhow::bail!("Table needs two players");
+        }
+        if table.get("status").and_then(Value::as_str) != Some("waiting") {
+            anyhow::bail!("Setup is closed");
+        }
+        return Ok(());
+    }
     if event_type == "game.start" {
         if playground_host_user_id(table) != Some(user.id.as_str()) {
             anyhow::bail!("Table host required");
@@ -1405,6 +1423,11 @@ fn validate_playground_event(
     }
     if private_zone_action_denied(table, user, event_type, payload) {
         anyhow::bail!("Private zone requires owner");
+    }
+    if event_type == "hand.mulligan"
+        && table.get("status").and_then(Value::as_str) != Some("waiting")
+    {
+        anyhow::bail!("Setup is closed");
     }
     if active_playground_event_type(event_type)
         && table.get("status").and_then(Value::as_str) != Some("active")
@@ -1427,7 +1450,12 @@ fn private_zone_action_denied(
 ) -> bool {
     if !matches!(
         event_type,
-        "card.move" | "card.reveal" | "card.flip" | "card.exhaust" | "deck.shuffle"
+        "card.move"
+            | "card.reveal"
+            | "card.flip"
+            | "card.exhaust"
+            | "deck.shuffle"
+            | "hand.mulligan"
     ) {
         return false;
     }
@@ -1445,12 +1473,17 @@ fn private_zone_action_denied(
     if seat.get("user_id").and_then(Value::as_str) == Some(user.id.as_str()) {
         return false;
     }
-    let zone = if matches!(event_type, "card.flip" | "card.exhaust" | "deck.shuffle") {
+    let zone = if matches!(
+        event_type,
+        "card.flip" | "card.exhaust" | "deck.shuffle" | "hand.mulligan"
+    ) {
         payload
             .get("zone")
             .and_then(Value::as_str)
             .unwrap_or(if event_type == "deck.shuffle" {
                 "main_deck"
+            } else if event_type == "hand.mulligan" {
+                "hand"
             } else {
                 "battlefield"
             })
@@ -1516,9 +1549,12 @@ fn turn_scoped_playground_event_type(value: &str) -> bool {
 
 fn apply_playground_event(table: &mut Value, event: &Value) {
     let event_type = event["type"].as_str().unwrap_or_default();
+    if event_type == "setup.deal" {
+        apply_setup_deal(table, event);
+    }
     if event_type == "game.start" {
-        if table.get("started_at").is_none_or(Value::is_null) {
-            draw_opening_hands(table);
+        if table.get("setup_dealt_at").is_none_or(Value::is_null) {
+            deal_opening_hands(table, event["created_at"].clone());
         }
         table["status"] = json!("active");
         if table.get("started_at").is_none_or(Value::is_null) {
@@ -1548,6 +1584,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     }
     if event_type == "deck.shuffle" {
         apply_deck_shuffle(table, event);
+    }
+    if event_type == "hand.mulligan" {
+        apply_hand_mulligan(table, event);
     }
     if event_type == "battlefield.claim" {
         apply_battlefield_claim(table, event);
@@ -1753,6 +1792,18 @@ fn draw_opening_hands(table: &mut Value) {
     }
 }
 
+fn apply_setup_deal(table: &mut Value, event: &Value) {
+    deal_opening_hands(table, event["created_at"].clone());
+}
+
+fn deal_opening_hands(table: &mut Value, dealt_at: Value) {
+    if !table.get("setup_dealt_at").is_none_or(Value::is_null) {
+        return;
+    }
+    draw_opening_hands(table);
+    table["setup_dealt_at"] = dealt_at;
+}
+
 fn begin_playground_turn(table: &mut Value, user_id: &str) {
     let Some(seat_index) = table
         .get("seats")
@@ -1909,6 +1960,80 @@ fn apply_deck_shuffle(table: &mut Value, event: &Value) {
             .cmp(&right_rank)
             .then_with(|| card_instance_key(left).cmp(&card_instance_key(right)))
     });
+}
+
+fn apply_hand_mulligan(table: &mut Value, event: &Value) {
+    let seat_index = event["payload"]
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let instance_ids = mulligan_instance_ids(&event["payload"]);
+    if instance_ids.is_empty() {
+        return;
+    }
+    let returned = {
+        let Some(hand) = table
+            .get_mut("seats")
+            .and_then(Value::as_array_mut)
+            .and_then(|seats| seats.get_mut(seat_index))
+            .and_then(|seat| seat.get_mut("zones"))
+            .and_then(Value::as_object_mut)
+            .and_then(|zones| zones.get_mut("hand"))
+            .and_then(Value::as_array_mut)
+        else {
+            return;
+        };
+        let mut returned = Vec::new();
+        for instance_id in instance_ids {
+            if let Some(index) = hand.iter().position(|card| {
+                card.get("instance_id").and_then(Value::as_str) == Some(instance_id.as_str())
+            }) {
+                returned.push(hand.remove(index));
+            }
+        }
+        returned
+    };
+    if returned.is_empty() {
+        return;
+    }
+    let count = returned.len();
+    if let Some(deck) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+        .and_then(|seat| seat.get_mut("zones"))
+        .and_then(Value::as_object_mut)
+        .and_then(|zones| zones.get_mut("main_deck"))
+        .and_then(Value::as_array_mut)
+    {
+        deck.extend(returned);
+    }
+    let mut shuffle_event = event.clone();
+    if let Some(payload) = shuffle_event
+        .get_mut("payload")
+        .and_then(Value::as_object_mut)
+    {
+        payload.insert("zone".to_string(), json!("main_deck"));
+    }
+    apply_deck_shuffle(table, &shuffle_event);
+    move_playground_cards(table, seat_index, "main_deck", "hand", count);
+}
+
+fn mulligan_instance_ids(payload: &Value) -> Vec<String> {
+    if let Some(instance_ids) = payload.get("instance_ids").and_then(Value::as_array) {
+        return instance_ids
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect();
+    }
+    payload
+        .get("instance_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(|value| vec![value.to_string()])
+        .unwrap_or_default()
 }
 
 fn deck_shuffle_zone(value: Option<&str>) -> &'static str {
@@ -2369,6 +2494,8 @@ fn valid_playground_event_type(value: &str) -> bool {
     matches!(
         value,
         "game.start"
+            | "setup.deal"
+            | "hand.mulligan"
             | "card.move"
             | "deck.shuffle"
             | "card.reveal"

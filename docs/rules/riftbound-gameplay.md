@@ -30,6 +30,7 @@ Playground implication:
 - Playground API responses now mask Main Deck, Rune Deck, opponent hands, and opponent face-down cards with hidden placeholders while preserving card counts.
 - Stored table snapshots remain complete so owner actions and replay reduction can stay deterministic. User-facing HTTP/WebSocket snapshots are derived views.
 - `deck.shuffle` shuffles a player's `main_deck` or `rune_deck` before or during play while preserving secret visibility and replay determinism.
+- `setup.deal` deals each player a 4-card opening hand while the table remains in setup, and `hand.mulligan` returns selected hand cards to the Main Deck, shuffles, and redraws the same count.
 
 ## Turn Skeleton
 
@@ -44,6 +45,7 @@ Playground implication:
 - `turn.pass` is valid as the coarse first version.
 - Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
 - Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.phase` records the current phase label (`ready`, `score`, `channel`, `draw`, `main`, or `end`) in snapshots, logs, and replay. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes, draws 1, increments `turn_number`, and returns `turn_phase` to `main`.
+- Opening setup is explicit: the host can deal opening hands before `game.start`, and each player can mulligan selected cards from their own hand while the table is still waiting.
 - Battlefield control is modeled manually with `battlefield.claim`, which marks a public battlefield card with `controller_user_id`. Scoring from a selected battlefield sends `score.point` with `source: "battlefield"` and stores `last_scored_by` on that battlefield for logs and replay.
 - Showdowns are modeled manually with `showdown.start` and `showdown.end`. Starting a showdown records the contested battlefield in `active_showdown` and marks that battlefield as `contested`; ending it appends `showdown_history`, clears `active_showdown`, and, when a winner is chosen, assigns battlefield control to that winner.
 - Store turn state on the table snapshot, not only in the event log, so replay can rebuild it deterministically.

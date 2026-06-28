@@ -839,6 +839,7 @@ function createTableSnapshot(tableId, user, deck, now) {
     updated_at: now,
     started_at: null,
     completed_at: null,
+    setup_dealt_at: null,
     victory_score: PLAYGROUND_VICTORY_SCORE,
     turn_player_id: user.id,
     turn_phase: "setup",
@@ -960,6 +961,12 @@ function deckEntries(deckJson = {}) {
 }
 
 function validatePlaygroundEvent(table, user, eventType, payload = {}) {
+  if (eventType === "setup.deal") {
+    if (hostUserId(table) !== user.id) return { status: 403, message: "Only the table host can deal opening hands" };
+    if ((table.seats || []).length < 2) return { status: 409, message: "Table needs two players" };
+    if (table.status !== "waiting") return { status: 409, message: "Setup is closed" };
+    return null;
+  }
   if (eventType === "game.start") {
     if (hostUserId(table) !== user.id) return { status: 403, message: "Only the table host can start" };
     if ((table.seats || []).length < 2) return { status: 409, message: "Table needs two players" };
@@ -968,6 +975,9 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
   }
   const privateActionError = privateZoneActionError(table, user, eventType, payload);
   if (privateActionError) return privateActionError;
+  if (eventType === "hand.mulligan" && table.status !== "waiting") {
+    return { status: 409, message: "Setup is closed" };
+  }
   if (activePlaygroundEventTypes().has(eventType) && table.status !== "active") {
     return { status: 409, message: "Game has not started" };
   }
@@ -978,12 +988,12 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
 }
 
 function privateZoneActionError(table, user, eventType, payload = {}) {
-  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "deck.shuffle"]).has(eventType)) return null;
+  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "deck.shuffle", "hand.mulligan"]).has(eventType)) return null;
   const seat = table.seats?.[Number(payload.seat_index || 0)];
   if (!seat || seat.user_id === user.id) return null;
   const zone = zoneName(
-    new Set(["card.flip", "card.exhaust", "deck.shuffle"]).has(eventType)
-      ? payload.zone || (eventType === "deck.shuffle" ? "main_deck" : "battlefield")
+    new Set(["card.flip", "card.exhaust", "deck.shuffle", "hand.mulligan"]).has(eventType)
+      ? payload.zone || (eventType === "deck.shuffle" ? "main_deck" : eventType === "hand.mulligan" ? "hand" : "battlefield")
       : payload.from || "hand"
   );
   if (!isPrivateCardZone(zone)) return null;
@@ -1028,8 +1038,9 @@ function turnScopedPlaygroundEventTypes() {
 
 function applyPlaygroundEvent(table, event) {
   if (!Array.isArray(table.events)) table.events = [];
+  if (event.type === "setup.deal") applySetupDeal(table, event);
   if (event.type === "game.start") {
-    if (!table.started_at) drawOpeningHands(table);
+    if (!table.setup_dealt_at) dealOpeningHands(table, event.created_at);
     table.status = "active";
     table.started_at ||= event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats?.[0]?.user_id || "";
@@ -1042,6 +1053,7 @@ function applyPlaygroundEvent(table, event) {
   if (event.type === "card.flip") applyCardFlip(table, event.payload);
   if (event.type === "card.exhaust") applyCardExhaust(table, event.payload);
   if (event.type === "deck.shuffle") applyDeckShuffle(table, event);
+  if (event.type === "hand.mulligan") applyHandMulligan(table, event);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
   if (event.type === "showdown.start") applyShowdownStart(table, event);
   if (event.type === "showdown.end") applyShowdownEnd(table, event);
@@ -1078,6 +1090,16 @@ function applyPlaygroundEvent(table, event) {
 
 function drawOpeningHands(table) {
   for (const seat of table.seats || []) moveCards(seat, "main_deck", "hand", 4);
+}
+
+function applySetupDeal(table, event) {
+  dealOpeningHands(table, event.created_at);
+}
+
+function dealOpeningHands(table, dealtAt) {
+  if (table.setup_dealt_at) return;
+  drawOpeningHands(table);
+  table.setup_dealt_at = dealtAt || table.updated_at || table.created_at || null;
 }
 
 function beginTurn(table, userId) {
@@ -1124,6 +1146,29 @@ function applyDeckShuffle(table, event) {
     if (leftRank !== rightRank) return leftRank - rightRank;
     return cardInstanceKey(left).localeCompare(cardInstanceKey(right));
   });
+}
+
+function applyHandMulligan(table, event) {
+  const seat = table.seats?.[Number(event.payload?.seat_index || 0)];
+  const hand = seat?.zones?.hand;
+  const deck = seat?.zones?.main_deck;
+  if (!Array.isArray(hand) || !Array.isArray(deck)) return;
+  const instanceIds = mulliganInstanceIds(event.payload);
+  const returned = [];
+  for (const instanceId of instanceIds) {
+    const index = hand.findIndex((card) => card.instance_id === instanceId);
+    if (index >= 0) returned.push(...hand.splice(index, 1));
+  }
+  if (!returned.length) return;
+  deck.push(...returned);
+  applyDeckShuffle(table, { ...event, payload: { ...event.payload, zone: "main_deck" } });
+  moveCards(seat, "main_deck", "hand", returned.length);
+}
+
+function mulliganInstanceIds(payload = {}) {
+  if (Array.isArray(payload.instance_ids)) return payload.instance_ids.map(String).filter(Boolean);
+  if (payload.instance_id) return [String(payload.instance_id)];
+  return [];
 }
 
 function deckShuffleZone(value) {
@@ -1350,6 +1395,8 @@ function findZoneCard(table, zone, instanceId) {
 function validPlaygroundEventType(type) {
   return new Set([
     "game.start",
+    "setup.deal",
+    "hand.mulligan",
     "card.move",
     "deck.shuffle",
     "card.reveal",

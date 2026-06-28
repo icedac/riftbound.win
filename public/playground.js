@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground13";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground14";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -68,6 +68,8 @@ const els = {
   replayNext: document.querySelector("#replayNext"),
   replayState: document.querySelector("#replayState"),
   startGame: document.querySelector("#startGame"),
+  dealOpening: document.querySelector("#dealOpening"),
+  mulliganSelected: document.querySelector("#mulliganSelected"),
   shuffleMainDeck: document.querySelector("#shuffleMainDeck"),
   shuffleRuneDeck: document.querySelector("#shuffleRuneDeck"),
   drawOpening: document.querySelector("#drawOpening"),
@@ -145,6 +147,8 @@ function bindEvents() {
     renderCardPreview();
   });
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
+  els.dealOpening.addEventListener("click", () => appendAction("setup.deal", {}));
+  els.mulliganSelected.addEventListener("click", mulliganSelectedCard);
   els.shuffleMainDeck.addEventListener("click", () => appendAction("deck.shuffle", { seat_index: currentSeatIndex(), zone: "main_deck" }));
   els.shuffleRuneDeck.addEventListener("click", () => appendAction("deck.shuffle", { seat_index: currentSeatIndex(), zone: "rune_deck" }));
   els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 1 }));
@@ -330,6 +334,16 @@ async function endCurrentShowdown() {
   const table = currentTable();
   if (!table?.active_showdown) return;
   await appendAction("showdown.end", { winner_user_id: els.showdownWinnerSelect.value || "" });
+}
+
+async function mulliganSelectedCard() {
+  const selected = selectedCardRecord();
+  if (!selected || selected.zone !== "hand" || selected.seat.user_id !== currentUserId()) return;
+  await appendAction("hand.mulligan", {
+    seat_index: selected.seatIndex,
+    instance_id: selected.instanceId,
+  });
+  state.selectedCard = null;
 }
 
 function scorePayload() {
@@ -570,6 +584,8 @@ function renderTable() {
   const phaseControlsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   const selected = selectedCardRecord();
   els.startGame.disabled = !canStartTable(table);
+  els.dealOpening.disabled = !canDealOpening(table);
+  els.mulliganSelected.disabled = controlsDisabled || !isSetupOpen(table) || !selected || selected.zone !== "hand" || selected.seat.user_id !== currentUserId();
   els.shuffleMainDeck.disabled = controlsDisabled;
   els.shuffleRuneDeck.disabled = controlsDisabled;
   for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.concedeGame, els.passTurn, els.submitResult]) {
@@ -721,6 +737,22 @@ function canStartTable(table) {
   );
 }
 
+function canDealOpening(table) {
+  return Boolean(
+    table &&
+      state.me &&
+      currentSeat() &&
+      currentUserId() === hostUserId(table) &&
+      (table.seats || []).length >= 2 &&
+      table.status === "waiting" &&
+      !table.setup_dealt_at
+  );
+}
+
+function isSetupOpen(table) {
+  return table?.status === "waiting";
+}
+
 function isTableActive(table) {
   return table?.status === "active";
 }
@@ -783,10 +815,12 @@ function reportError(error) {
 }
 
 function eventSummary(event) {
+  if (event.type === "setup.deal") return "deal opening hands";
   if (event.type === "card.move") return `${event.payload?.count || 1} card(s): ${event.payload?.from} -> ${event.payload?.to}`;
   if (event.type === "card.flip") return `flip ${event.payload?.zone || "battlefield"}`;
   if (event.type === "card.exhaust") return `${event.payload?.exhausted === false ? "ready" : "exhaust"} ${event.payload?.zone || "battlefield"}`;
   if (event.type === "deck.shuffle") return `shuffle ${event.payload?.zone === "rune_deck" ? "runes" : "deck"}`;
+  if (event.type === "hand.mulligan") return "mulligan selected";
   if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
