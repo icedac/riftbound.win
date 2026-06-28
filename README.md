@@ -67,6 +67,18 @@ store for larger images and videos; without it, production media uploads are
 limited to small inline D1 objects. The local Rust server does not need those
 Cloudflare bindings.
 
+## Project Maintenance
+
+Operational rules and planning docs live in:
+
+- `AGENTS.md` for agent-facing repo rules
+- `rules/project-governance.md` for ownership boundaries and source-of-truth rules
+- `rules/deployment.md` for Cloudflare Pages, D1, R2, OAuth, and GitHub Actions
+- `rules/packaging.md` for sync/export/package contracts
+- `docs/operations/maintenance.md` for routine maintenance
+- `docs/prd/playground.md` for the Cockatrice-style playground PRD
+- `docs/superpowers/plans/2026-06-28-playground.md` for the implementation plan
+
 ## Deck Rules
 
 The deck editor validates Constructed deck size from Riftbound Tournament Rules 402.1: exactly 40 Main Deck cards including chosen champion, 1 Legend, 12 runes, and 3 battlefields with unique names.
