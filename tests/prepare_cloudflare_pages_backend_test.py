@@ -33,6 +33,7 @@ class PrepareCloudflarePagesBackendTest(unittest.TestCase):
             self.assertIn('binding = "DB"', config)
             self.assertIn('database_id = "d1-uuid"', config)
             self.assertNotIn("[[r2_buckets]]", config)
+            self.assertNotIn("[[durable_objects.bindings]]", config)
 
     def test_writes_playground_durable_object_binding(self):
         module = load_module()
@@ -46,7 +47,7 @@ class PrepareCloudflarePagesBackendTest(unittest.TestCase):
             )
             module.CONFIG_PATH = config_path
 
-            module.write_bindings("d1-uuid", include_r2=False)
+            module.write_bindings("d1-uuid", include_r2=False, include_playground_do=True)
 
             config = config_path.read_text(encoding="utf-8")
             self.assertIn("[[durable_objects.bindings]]", config)

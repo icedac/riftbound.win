@@ -91,7 +91,7 @@ def r2_setup_failure_reason(output):
     return "R2 bucket setup failed for an unknown Cloudflare response."
 
 
-def write_bindings(database_id, *, include_r2=True):
+def write_bindings(database_id, *, include_r2=True, include_playground_do=False):
     current = CONFIG_PATH.read_text(encoding="utf-8")
     current = re.sub(
         rf"\n?{re.escape(START)}.*?{re.escape(END)}\n?",
@@ -107,6 +107,15 @@ def write_bindings(database_id, *, include_r2=True):
 binding = "MEDIA"
 bucket_name = "{toml_string(R2_BUCKET)}"
 """
+    playground_do_block = ""
+    if include_playground_do:
+        playground_do_block = f"""
+
+[[durable_objects.bindings]]
+name = "PLAYGROUND_TABLE"
+script_name = "{toml_string(PLAYGROUND_DO_WORKER)}"
+class_name = "{toml_string(PLAYGROUND_DO_CLASS)}"
+"""
     block = f"""
 
 {START}
@@ -115,11 +124,7 @@ binding = "DB"
 database_name = "{toml_string(D1_NAME)}"
 database_id = "{toml_string(database_id)}"
 {r2_block.rstrip()}
-
-[[durable_objects.bindings]]
-name = "PLAYGROUND_TABLE"
-script_name = "{toml_string(PLAYGROUND_DO_WORKER)}"
-class_name = "{toml_string(PLAYGROUND_DO_CLASS)}"
+{playground_do_block.rstrip()}
 {END}
 """
     CONFIG_PATH.write_text(f"{current}{block}", encoding="utf-8")
@@ -194,7 +199,8 @@ def main():
             )
             if isinstance(error.code, int) and error.code not in (0, None):
                 print(f"R2 setup skipped after command exit code {error.code}.")
-        write_bindings(database_id, include_r2=include_r2)
+        include_playground_do = os.environ.get("RIFTBOUND_PLAYGROUND_DO_ENABLED") == "1"
+        write_bindings(database_id, include_r2=include_r2, include_playground_do=include_playground_do)
     upload_oauth_secrets()
 
 
