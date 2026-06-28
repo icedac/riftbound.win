@@ -1,5 +1,6 @@
 import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 import { filterCards, normalizeSearch, resolveInitialCardFilters } from "/card-filter-state.js?v=20260628-cardboot3";
+import { shouldRepairInitialCardGrid } from "/card-grid-repair.js?v=20260628-gridrepair1";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardboot3";
 
 const state = {
@@ -17,6 +18,7 @@ const state = {
   hideBanned: true,
   autoLoadFrame: 0,
   autoPager: null,
+  initialGridRepairRan: false,
 };
 
 const els = {
@@ -55,6 +57,7 @@ async function boot() {
   bindEvents();
   readInitialSearch();
   applyInitialFilters();
+  scheduleInitialGridRepair();
 }
 
 function buildFilters() {
@@ -130,6 +133,23 @@ function render() {
   els.grid.replaceChildren(fragment);
   updateSentinel(visibleCards.length, state.filtered.length);
   scheduleAutoLoad();
+}
+
+function scheduleInitialGridRepair() {
+  if (!shouldRepairInitialCardGrid({
+    totalCards: state.cards.length,
+    filteredCards: state.filtered.length,
+    visibleCards: Math.min(state.visibleCount, state.filtered.length),
+    repairAlreadyRan: state.initialGridRepairRan,
+  })) {
+    return;
+  }
+  state.initialGridRepairRan = true;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (state.filtered.length > 0) render();
+    });
+  });
 }
 
 function setupAutoPager() {

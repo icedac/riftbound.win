@@ -46,10 +46,17 @@ test("cards page cache-busts its application script", async () => {
 test("cards app cache-busts its module imports", async () => {
   const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 
-  for (const modulePath of ["/foil.js", "/card-filter-state.js", "/paging.js"]) {
+  for (const modulePath of ["/foil.js", "/card-filter-state.js", "/paging.js", "/card-grid-repair.js"]) {
     assert.match(source, new RegExp(`from "${modulePath.replace(".", "\\.")}\\?v=[^"]+"`), modulePath);
     assert.doesNotMatch(source, new RegExp(`from "${modulePath.replace(".", "\\.")}"`), modulePath);
   }
+});
+
+test("cards app schedules an initial grid repair pass", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /scheduleInitialGridRepair\(\)/);
+  assert.match(source, /shouldRepairInitialCardGrid/);
 });
 
 test("foil helper imports are cache-busted wherever foil rendering is used", async () => {
