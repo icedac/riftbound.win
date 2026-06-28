@@ -58,3 +58,11 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.doesNotMatch(js, /localStorage/);
   assert.doesNotMatch(js, /riftbound\.playground\.tables\.v1/);
 });
+
+test("playground client does not block profile and table boot on the card catalog", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(js, /async function loadProfile/);
+  assert.match(js, /async function loadCardsQuietly/);
+  assert.doesNotMatch(js, /Promise\.all\(\s*\[\s*fetchJson\("\/cards\.json"/);
+});

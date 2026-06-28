@@ -61,13 +61,12 @@ const els = {
 async function boot() {
   bindEvents();
   const pathTableId = tableIdFromPath();
-  const [cards, me] = await Promise.all([fetchJson("/cards.json", []), fetchJson("/api/me", {})]);
-  state.cards = Array.isArray(cards) ? cards : [];
-  state.me = me.user || null;
   if (pathTableId) state.selectedTableId = pathTableId;
+  await loadProfile();
   await Promise.all([loadSavedDecks(), loadTables()]);
   render();
   syncRealtime();
+  loadCardsQuietly();
   state.pollTimer = window.setInterval(loadTablesQuietly, POLL_MS);
 }
 
@@ -114,6 +113,21 @@ function bindEvents() {
     appendAction("result.propose", { result: els.resultSelect.value });
   });
   els.buildReplay.addEventListener("click", renderReplay);
+}
+
+async function loadProfile() {
+  const me = await fetchJson("/api/me", {});
+  state.me = me.user || null;
+}
+
+async function loadCardsQuietly() {
+  try {
+    const cards = await fetchJson("/cards.json", []);
+    state.cards = Array.isArray(cards) ? cards : [];
+    renderTable();
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 async function loadSavedDecks() {
