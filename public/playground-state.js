@@ -199,6 +199,7 @@ function buildZones(deckJson = {}, cards = []) {
     rune_deck: [],
     rune_pool: [],
     hand: [],
+    chain: [],
     battlefield: [],
     discard: [],
     removed: [],

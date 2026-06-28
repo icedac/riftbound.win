@@ -1011,6 +1011,92 @@ async fn local_playground_turn_start_readies_channeled_runes() {
 }
 
 #[tokio::test]
+async fn local_playground_card_move_supports_chain_zone() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Chain Deck").await;
+    let guest_deck = create_test_deck(&app, &guest_cookie, "Guest Chain Deck").await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+    assert!(
+        created["table"]["seats"][0]["zones"]["chain"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+    let started = json(start).await;
+    let selected = started["table"]["seats"][0]["zones"]["hand"][0]["instance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let move_to_chain = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"card.move","payload":{{"seat_index":0,"from":"hand","to":"chain","instance_id":"{selected}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(move_to_chain.status(), StatusCode::CREATED);
+    let moved = json(move_to_chain).await;
+    assert_eq!(
+        moved["table"]["seats"][0]["zones"]["chain"][0]["instance_id"],
+        selected
+    );
+    assert_eq!(
+        moved["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+}
+
+#[tokio::test]
 async fn local_playground_turn_phase_events_persist_in_snapshots() {
     let (app, _temp) = test_router();
     let host_cookie = login(&app, "google").await;

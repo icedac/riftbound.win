@@ -944,6 +944,45 @@ test("worker records card exhaust state and readies channeled runes on new turns
   assert.equal(returned.table.seats[0].zones.rune_pool.find((card) => card.instance_id === selectedRune).exhausted, false);
 });
 
+test("worker allows card movement into the chain zone", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  const started = await postPlaygroundEvent(env, table.id, "host-session", "game.start").then((response) => response.json());
+  const selected = started.table.seats[0].zones.hand[0].instance_id;
+  const move = await postPlaygroundEvent(env, table.id, "host-session", "card.move", {
+    seat_index: 0,
+    from: "hand",
+    to: "chain",
+    instance_id: selected,
+  });
+
+  assert.equal(move.status, 201);
+  const moved = await move.json();
+  assert.equal(moved.table.seats[0].zones.chain.length, 1);
+  assert.equal(moved.table.seats[0].zones.chain[0].instance_id, selected);
+  assert.equal(moved.table.seats[0].zones.hand.length, 3);
+});
+
 test("worker records turn phase events in snapshots and logs", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db);

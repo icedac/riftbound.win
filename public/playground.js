@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground11";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground12";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -20,6 +20,7 @@ const PLAYGROUND_ZONE_ORDER = [
   "rune_deck",
   "rune_pool",
   "hand",
+  "chain",
   "battlefield",
   "discard",
   "removed",

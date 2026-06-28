@@ -42,6 +42,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'value="base"',
     'value="legend_zone"',
     'value="battlefields"',
+    'value="chain"',
     'id="scorePoint"',
     'id="concedeGame"',
     'id="eventLog"',
@@ -134,6 +135,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /PLAYGROUND_ZONE_ORDER/);
   assert.match(js, /legend_zone/);
   assert.match(js, /battlefields/);
+  assert.match(js, /chain/);
   assert.match(js, /controller_user_id/);
   assert.match(js, /base/);
   assert.match(js, /function renderCardPreview/);

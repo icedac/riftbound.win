@@ -48,6 +48,7 @@ test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   assert.deepEqual(table.seats[0].zones.hand, []);
   assert.equal(table.seats[0].zones.main_deck.length, 5);
   assert.equal(table.seats[0].zones.rune_deck.length, 2);
+  assert.deepEqual(table.seats[0].zones.chain, []);
   assert.deepEqual(table.seats[0].zones.rune_pool, []);
   assert.equal(table.seats[0].points, 0);
 });
@@ -296,4 +297,21 @@ test("card events can move a selected instance and flip it in place", () => {
 
   const replay = replayTableEvents(table.events);
   assert.equal(replay[2].summary, "Flip selected card in battlefield face down");
+});
+
+test("cards can move through the public chain zone", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 1 }, now: 1100 });
+  const selected = table.seats[0].zones.hand[0].instance_id;
+
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "card.move",
+    payload: { seat_index: 0, from: "hand", to: "chain", instance_id: selected },
+    now: 1200,
+  });
+
+  assert.equal(table.seats[0].zones.chain.length, 1);
+  assert.equal(table.seats[0].zones.chain[0].instance_id, selected);
+  assert.equal(table.seats[0].zones.hand.length, 0);
 });

@@ -921,6 +921,7 @@ function buildPlaygroundZones(deckJson = {}) {
     rune_deck: [],
     rune_pool: [],
     hand: [],
+    chain: [],
     battlefield: [],
     discard: [],
     removed: [],

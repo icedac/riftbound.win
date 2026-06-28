@@ -1319,6 +1319,7 @@ fn build_playground_zones(deck_json: &Value) -> Value {
         "rune_deck": rune_deck,
         "rune_pool": [],
         "hand": [],
+        "chain": [],
         "battlefield": [],
         "discard": [],
         "removed": [],
