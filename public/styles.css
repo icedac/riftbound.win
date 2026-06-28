@@ -594,6 +594,7 @@ label {
 }
 
 .foil-surface {
+  contain: paint;
   transform:
     perspective(var(--foil-perspective, 860px))
     var(--foil-base-transform, translateZ(0))
@@ -608,47 +609,61 @@ label {
 
 .foil-surface.is-foil-active {
   will-change: transform;
-  filter: brightness(1.03) contrast(1.03);
+}
+
+.foil-surface.is-foil-active .foil-spectrum {
+  opacity: calc(0.16 + (var(--card-opacity) * 0.42));
+}
+
+.foil-surface.is-foil-active .foil-glare {
+  opacity: calc(0.08 + (var(--card-opacity) * 0.24));
 }
 
 .foil-layer {
   position: absolute;
   inset: 0;
   border-radius: inherit;
+  contain: paint;
   pointer-events: none;
   transform: translateZ(1px);
   transition:
     opacity 170ms ease,
-    background-position 130ms ease,
-    filter 170ms ease;
+    background-position 130ms ease;
 }
 
 .foil-spectrum {
   z-index: 2;
-  opacity: calc(0.035 + (var(--card-opacity) * 0.18));
+  opacity: calc(0.08 + (var(--card-opacity) * 0.24));
   background-image:
-    repeating-linear-gradient(
-      118deg,
-      hsl(342 100% 67% / 34%) 0%,
-      hsl(45 100% 67% / 32%) 10%,
-      hsl(126 72% 63% / 26%) 20%,
-      hsl(184 94% 66% / 32%) 30%,
-      hsl(242 92% 72% / 30%) 40%,
-      hsl(292 95% 72% / 28%) 50%,
-      hsl(342 100% 67% / 34%) 60%
+    conic-gradient(
+      from calc((var(--pointer-from-left) * 110deg) + 18deg) at var(--pointer-x) var(--pointer-y),
+      hsl(44 100% 72% / 0%) 0deg,
+      hsl(51 100% 72% / 44%) 42deg,
+      hsl(160 100% 69% / 34%) 102deg,
+      hsl(196 100% 72% / 44%) 164deg,
+      hsl(258 100% 76% / 36%) 228deg,
+      hsl(322 100% 74% / 42%) 294deg,
+      hsl(44 100% 72% / 0%) 360deg
     ),
     radial-gradient(
-      farthest-corner circle at var(--pointer-x) var(--pointer-y),
-      rgb(255 255 255 / 42%) 0%,
-      rgb(255 255 255 / 10%) 28%,
-      rgb(0 0 0 / 36%) 88%
+      farthest-corner circle at calc(var(--pointer-x) * 0.75) calc(var(--pointer-y) * 0.82),
+      rgb(255 255 255 / 38%) 0%,
+      rgb(255 255 255 / 9%) 32%,
+      rgb(0 0 0 / 18%) 92%
+    ),
+    linear-gradient(
+      128deg,
+      transparent 18%,
+      rgb(255 255 255 / 20%) 44%,
+      rgb(255 245 179 / 18%) 50%,
+      transparent 72%
     );
-  background-size: 340% 340%, cover;
+  background-size: 180% 180%, cover, 220% 220%;
   background-position:
-    calc(((50% - var(--background-x)) * 2.4) + 50%) calc(((50% - var(--background-y)) * 3.1) + 50%),
-    center;
-  background-blend-mode: screen;
-  filter: brightness(calc(0.98 + (var(--pointer-from-center) * 0.18))) contrast(1.08) saturate(1.2);
+    var(--background-x) var(--background-y),
+    center,
+    var(--pointer-x) var(--pointer-y);
+  background-blend-mode: screen, soft-light, screen;
   mix-blend-mode: screen;
 }
 
@@ -692,7 +707,7 @@ label {
 
 .foil-sparkle {
   z-index: 4;
-  opacity: calc(0.02 + (var(--card-opacity) * 0.12));
+  opacity: calc(0.012 + (var(--card-opacity) * 0.09));
   background-image:
     radial-gradient(circle at 13% 18%, rgb(255 255 255 / 58%) 0 1px, transparent 2px),
     radial-gradient(circle at 78% 22%, rgb(255 246 184 / 48%) 0 1px, transparent 2.2px),
@@ -715,13 +730,12 @@ label {
     calc(100% - var(--background-x)) var(--background-y),
     var(--background-x) calc(100% - var(--background-y)),
     center;
-  filter: brightness(1.35) contrast(1.2);
   mix-blend-mode: screen;
 }
 
 .foil-glare {
   z-index: 5;
-  opacity: calc(0.025 + (var(--card-opacity) * (0.09 + var(--pointer-from-center) * 0.18)));
+  opacity: calc(0.035 + (var(--card-opacity) * (0.12 + var(--pointer-from-center) * 0.12)));
   background-image:
     radial-gradient(
       farthest-corner circle at var(--pointer-x) var(--pointer-y),
@@ -738,13 +752,11 @@ label {
     );
   background-size: cover, 220% 220%;
   background-position: center, var(--pointer-x) var(--pointer-y);
-  filter: brightness(1.04) contrast(1.25);
   mix-blend-mode: overlay;
 }
 
 .foil-premium .foil-spectrum {
-  opacity: calc(0.055 + (var(--card-opacity) * 0.26));
-  filter: brightness(calc(1 + (var(--pointer-from-center) * 0.24))) contrast(1.16) saturate(1.35);
+  opacity: calc(0.12 + (var(--card-opacity) * 0.32));
 }
 
 .foil-premium .foil-etch {
@@ -785,22 +797,32 @@ label {
   white-space: nowrap;
 }
 
+.card-title strong.foil-only-name {
+  display: -webkit-box;
+  line-height: 1.16;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .foil-only-name {
   background-image: linear-gradient(
     96deg,
-    #fff7ad 0%,
-    #67e8f9 18%,
-    #c4b5fd 35%,
-    #f9a8d4 52%,
-    #86efac 68%,
-    #fef08a 84%,
-    #fff7ad 100%
+    #fef08a 0%,
+    #22d3ee 14%,
+    #a78bfa 30%,
+    #fb7185 46%,
+    #34d399 62%,
+    #f59e0b 78%,
+    #fef08a 100%
   );
-  background-size: 260% 100%;
+  background-size: 220% 100%;
   color: transparent;
   -webkit-background-clip: text;
   background-clip: text;
-  text-shadow: 0 0 16px rgb(255 255 255 / 10%);
+  text-shadow: 0 0 16px rgb(103 232 249 / 14%);
 }
 
 .is-foil-only .image-wrap {
@@ -1934,10 +1956,10 @@ dialog::backdrop {
 
 @keyframes foil-drift {
   from {
-    background-position: 0% 50%, center;
+    background-position: 0% 50%, center, 0% 50%;
   }
   to {
-    background-position: 180% 50%, center;
+    background-position: 100% 50%, center, 100% 50%;
   }
 }
 
