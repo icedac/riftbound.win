@@ -158,11 +158,17 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /controller_user_id/);
   assert.match(js, /base/);
   assert.match(js, /function renderCardPreview/);
+  assert.match(js, /function previewCardFromEvent/);
+  assert.match(js, /function clearPreviewFromEvent/);
   assert.match(js, /isHiddenCard/);
   assert.match(js, /exhausted/);
   assert.match(js, /function cardImageSrc/);
   assert.match(js, /document\.createElement\("img"\)/);
+  assert.match(js, /pointerover/);
+  assert.match(js, /pointerout/);
   assert.match(js, /mouseover/);
+  assert.match(js, /relatedTarget/);
+  assert.match(js, /button\.contains\(event\.relatedTarget\)/);
   assert.match(js, /focusin/);
   assert.match(css, /\.card-hover-preview/);
   assert.match(css, /\.playground-table\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(190px, 240px\)/s);

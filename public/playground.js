@@ -136,27 +136,12 @@ function bindEvents() {
     state.hoveredCard = state.selectedCard;
     render();
   });
-  els.tableZones.addEventListener("mouseover", (event) => {
-    const button = event.target.closest("[data-card-instance-id]");
-    if (!button) return;
-    state.hoveredCard = cardRefFromNode(button);
-    renderCardPreview();
-  });
-  els.tableZones.addEventListener("mouseout", (event) => {
-    if (!event.target.closest("[data-card-instance-id]")) return;
-    state.hoveredCard = null;
-    renderCardPreview();
-  });
-  els.tableZones.addEventListener("focusin", (event) => {
-    const button = event.target.closest("[data-card-instance-id]");
-    if (!button) return;
-    state.hoveredCard = cardRefFromNode(button);
-    renderCardPreview();
-  });
-  els.tableZones.addEventListener("focusout", () => {
-    state.hoveredCard = null;
-    renderCardPreview();
-  });
+  for (const eventName of ["pointerover", "mouseover", "focusin"]) {
+    els.tableZones.addEventListener(eventName, previewCardFromEvent);
+  }
+  for (const eventName of ["pointerout", "mouseout", "focusout"]) {
+    els.tableZones.addEventListener(eventName, clearPreviewFromEvent);
+  }
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
   els.dealOpening.addEventListener("click", () => appendAction("setup.deal", {}));
   els.mulliganSelected.addEventListener("click", mulliganSelectedCard);
@@ -193,6 +178,28 @@ function bindEvents() {
   els.buildReplay.addEventListener("click", renderReplay);
   els.replayPrev.addEventListener("click", () => stepReplay(-1));
   els.replayNext.addEventListener("click", () => stepReplay(1));
+}
+
+function previewCardFromEvent(event) {
+  const button = cardButtonFromEvent(event);
+  if (!button) return;
+  state.hoveredCard = cardRefFromNode(button);
+  renderCardPreview();
+}
+
+function clearPreviewFromEvent(event) {
+  const button = cardButtonFromEvent(event);
+  if (!button) return;
+  if (event.relatedTarget && button.contains(event.relatedTarget)) return;
+  state.hoveredCard = null;
+  renderCardPreview();
+}
+
+function cardButtonFromEvent(event) {
+  const target = event.target instanceof Element ? event.target : null;
+  const button = target?.closest("[data-card-instance-id]");
+  if (!button || !els.tableZones.contains(button)) return null;
+  return button;
 }
 
 async function loadProfile() {
