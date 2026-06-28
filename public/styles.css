@@ -1482,10 +1482,11 @@ dialog::backdrop {
   white-space: pre-line;
 }
 
-.load-more {
-  justify-self: center;
-  min-width: min(280px, 100%);
-  margin: 8px 0 24px;
+.auto-load-sentinel {
+  width: 100%;
+  min-height: 1px;
+  margin: 1px 0 32px;
+  pointer-events: none;
 }
 
 .community-frame {

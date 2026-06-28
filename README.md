@@ -11,6 +11,13 @@ cargo run -- serve --port 5173
 
 Open `http://127.0.0.1:5173` after the server starts.
 
+The local Rust server serves the same `/api/*` shape as the Cloudflare Pages
+Worker. Google and Naver buttons use local dev sign-in flows on localhost, so
+you can test account linking, profile edits, avatar upload, community posting,
+and pasted image/video uploads without provider secrets. Runtime API state is
+stored in `data/riftbound-local.sqlite`, and uploads are written under
+`public/user-media/`; both are ignored by Git.
+
 Local pages:
 
 - `/` foil-heavy landing page
@@ -54,7 +61,9 @@ OAuth callback URLs to register with providers:
 - `https://riftbound.win/api/auth/naver/callback`
 - `https://riftbound.kr/api/auth/naver/callback`
 
-Without Pages bindings, the local Rust server still serves the UI. Community posts and pasted media fall back to browser-local storage, while auth/profile API calls show signed-out or setup-missing states.
+Without Pages bindings, the deployed Pages site still serves the static UI, but
+production auth/profile/community uploads require the `DB` and `MEDIA` bindings
+above. The local Rust server does not need those Cloudflare bindings.
 
 ## Deck Rules
 

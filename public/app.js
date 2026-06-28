@@ -1,4 +1,5 @@
 import { appendFoilLayers, bindFoilSurface } from "/foil.js";
+import { PAGE_SIZE, hasMoreCards, nextVisibleCount, shouldAutoLoad } from "/paging.js";
 
 const state = {
   cards: [],
@@ -13,9 +14,9 @@ const state = {
   tag: "",
   backOnly: false,
   hideBanned: true,
+  autoLoadFrame: 0,
+  autoPager: null,
 };
-
-const PAGE_SIZE = 96;
 
 const els = {
   summary: document.querySelector("#summary"),
@@ -30,7 +31,7 @@ const els = {
   backOnly: document.querySelector("#backOnly"),
   hideBanned: document.querySelector("#hideBanned"),
   reset: document.querySelector("#reset"),
-  loadMore: document.querySelector("#loadMore"),
+  sentinel: document.querySelector("#scrollSentinel"),
   detail: document.querySelector("#detail"),
   detailBody: document.querySelector("#detailBody"),
   closeDetail: document.querySelector("#closeDetail"),
@@ -91,10 +92,7 @@ function bindEvents() {
   });
 
   els.reset.addEventListener("click", resetFilters);
-  els.loadMore.addEventListener("click", () => {
-    state.visibleCount += PAGE_SIZE;
-    render();
-  });
+  setupAutoPager();
   els.closeDetail.addEventListener("click", () => els.detail.close());
   els.detail.addEventListener("click", (event) => {
     if (event.target === els.detail) els.detail.close();
@@ -122,7 +120,7 @@ function render() {
   els.summary.textContent = `${visibleCards.length.toLocaleString()} shown / ${state.filtered.length.toLocaleString()} filtered / ${state.cards.length.toLocaleString()} cards`;
   if (state.filtered.length === 0) {
     els.grid.replaceChildren(emptyState());
-    els.loadMore.hidden = true;
+    updateSentinel(0, 0);
     return;
   }
 
@@ -131,8 +129,54 @@ function render() {
     fragment.append(cardNode(card));
   }
   els.grid.replaceChildren(fragment);
-  els.loadMore.hidden = visibleCards.length >= state.filtered.length;
-  els.loadMore.textContent = `Load more (${Math.min(PAGE_SIZE, state.filtered.length - visibleCards.length)} more)`;
+  updateSentinel(visibleCards.length, state.filtered.length);
+  scheduleAutoLoad();
+}
+
+function setupAutoPager() {
+  if (!els.sentinel) return;
+  if ("IntersectionObserver" in window) {
+    state.autoPager = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) revealNextPage();
+      },
+      { rootMargin: "900px 0px 1200px" }
+    );
+    state.autoPager.observe(els.sentinel);
+  }
+  window.addEventListener("scroll", scheduleAutoLoad, { passive: true });
+  window.addEventListener("resize", scheduleAutoLoad);
+}
+
+function updateSentinel(visible, total) {
+  if (!els.sentinel) return;
+  const hasMore = hasMoreCards(visible, total);
+  els.sentinel.hidden = !hasMore;
+  els.sentinel.setAttribute("aria-hidden", hasMore ? "false" : "true");
+}
+
+function scheduleAutoLoad() {
+  if (state.autoLoadFrame) return;
+  state.autoLoadFrame = requestAnimationFrame(() => {
+    state.autoLoadFrame = 0;
+    maybeAutoLoad();
+  });
+}
+
+function maybeAutoLoad() {
+  if (!els.sentinel || els.sentinel.hidden) return;
+  if (!hasMoreCards(state.visibleCount, state.filtered.length)) return;
+  const rect = els.sentinel.getBoundingClientRect();
+  if (shouldAutoLoad({ sentinelTop: rect.top, viewportHeight: window.innerHeight })) {
+    revealNextPage();
+  }
+}
+
+function revealNextPage() {
+  const next = nextVisibleCount(state.visibleCount, state.filtered.length, PAGE_SIZE);
+  if (next === state.visibleCount) return;
+  state.visibleCount = next;
+  render();
 }
 
 function cardNode(card) {
