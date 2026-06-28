@@ -1,5 +1,6 @@
 import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground16";
 import { playCardMovePayload } from "/playground-actions.js?v=20260628-playcard1";
+import { tableLobbySummary } from "/playground-lobby.js?v=20260628-lobby1";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -197,6 +198,7 @@ async function loadCardsQuietly() {
   try {
     const cards = await fetchJson("/cards.json", []);
     state.cards = Array.isArray(cards) ? cards : [];
+    renderTables();
     renderTable();
   } catch (error) {
     console.error(error);
@@ -609,11 +611,11 @@ function tableButton(table) {
   button.type = "button";
   button.className = ["table-card", state.selectedTableId === table.id ? "active" : ""].filter(Boolean).join(" ");
   button.dataset.tableId = table.id;
-  const host = table.seats?.[0];
+  const summary = tableLobbySummary(table, state.cards);
   button.append(
-    text("strong", host?.deck_name || "Untitled Table"),
-    text("span", `${table.status} · ${(table.seats || []).length}/2 players`),
-    text("small", `${host?.display_name || "Host"} · ${host?.zones?.main_deck?.length || 0} card deck`)
+    text("strong", summary.title),
+    text("span", `${summary.status} · ${summary.playerCount} · ${summary.created}`),
+    text("small", `${summary.host} · ${summary.setup} · ${summary.counts}`)
   );
   return button;
 }
