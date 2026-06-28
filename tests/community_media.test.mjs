@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { filterAcceptedMediaFiles, mediaUploadConfig } from "../public/community-media.js";
+import { clipboardMediaFiles, filterAcceptedMediaFiles, mediaUploadConfig } from "../public/community-media.js";
 
 function file(name, type, size) {
   return { name, type, size };
@@ -48,4 +48,20 @@ test("filterAcceptedMediaFiles rejects unsupported and oversized pasted files", 
   assert(result.rejected.some((item) => item.reason.includes("too large")));
   assert(result.rejected.some((item) => item.reason.includes("Unsupported")));
   assert(result.rejected.some((item) => item.reason.includes("up to 2")));
+});
+
+test("clipboardMediaFiles extracts pasted image and video files from clipboard data", () => {
+  const image = file("pull.png", "image/png", 100);
+  const video = file("clip.webm", "video/webm", 100);
+  const text = file("notes.txt", "text/plain", 10);
+  const clipboardData = {
+    files: [image, text],
+    items: [
+      { kind: "file", type: "video/webm", getAsFile: () => video },
+      { kind: "string", type: "text/plain", getAsFile: () => text },
+      { kind: "file", type: "application/pdf", getAsFile: () => file("doc.pdf", "application/pdf", 100) },
+    ],
+  };
+
+  assert.deepEqual(clipboardMediaFiles(clipboardData).map((item) => item.name), ["pull.png", "clip.webm"]);
 });

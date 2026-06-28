@@ -1,4 +1,4 @@
-import { filterAcceptedMediaFiles, mediaUploadConfig } from "/community-media.js?v=20260628-r2state";
+import { clipboardMediaFiles, filterAcceptedMediaFiles, mediaUploadConfig } from "/community-media.js?v=20260628-paste1";
 
 const STORAGE_KEY = "riftbound.community.v2";
 const boardMeta = {
@@ -106,8 +106,8 @@ function bindEvents() {
     els.mediaDrop.classList.remove("dragging");
     addFiles([...event.dataTransfer.files]);
   });
-  els.form.addEventListener("paste", (event) => {
-    const files = [...event.clipboardData.files].filter((file) => /^image\/|^video\//.test(file.type));
+  document.addEventListener("paste", (event) => {
+    const files = clipboardMediaFiles(event.clipboardData);
     if (files.length > 0) {
       event.preventDefault();
       addFiles(files);

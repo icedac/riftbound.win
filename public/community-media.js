@@ -42,6 +42,22 @@ export function filterAcceptedMediaFiles(files, config = mediaUploadConfig(), ex
   return { accepted, rejected };
 }
 
+export function clipboardMediaFiles(clipboardData) {
+  const files = [];
+  const seen = new Set();
+
+  for (const file of Array.from(clipboardData?.files || [])) {
+    addMediaFile(files, seen, file);
+  }
+
+  for (const item of Array.from(clipboardData?.items || [])) {
+    if (item?.kind !== "file" || !/^image\/|^video\//.test(item.type || "")) continue;
+    addMediaFile(files, seen, item.getAsFile?.());
+  }
+
+  return files;
+}
+
 export function formatBytes(bytes) {
   const value = Number(bytes) || 0;
   if (value >= 1024 * 1024) return `${Math.round(value / (1024 * 1024))} MB`;
@@ -56,4 +72,12 @@ function positiveNumber(value) {
 
 function isMediaFile(file) {
   return /^image\/|^video\//.test(file?.type || "");
+}
+
+function addMediaFile(files, seen, file) {
+  if (!isMediaFile(file)) return;
+  const key = `${file.name || "clipboard-media"}:${file.type || ""}:${file.size || 0}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  files.push(file);
 }
