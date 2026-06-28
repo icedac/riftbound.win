@@ -654,6 +654,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
       format: "constructed",
       deck_json: JSON.stringify({
         legends: [{ id: "UNL-236-STAR", quantity: 1 }],
+        champions: [{ id: "OGN-066", quantity: 1 }],
         main: [{ id: "OGN-001", quantity: 5 }],
         runes: [{ id: "OGN-R01", quantity: 2 }],
         battlefields: [
@@ -711,6 +712,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(created.table.victory_score, 8);
   assert.equal(created.table.seats[0].zones.main_deck.length, 5);
   assert.equal(created.table.seats[0].zones.legend_zone[0].id, "UNL-236-STAR");
+  assert.equal(created.table.seats[0].zones.champion_zone[0].id, "OGN-066");
   assert.equal(created.table.seats[0].zones.battlefields.length, 3);
   assert.equal(created.table.seats[0].zones.base.length, 0);
   assert.equal(created.table.seats[0].zones.rune_pool.length, 0);

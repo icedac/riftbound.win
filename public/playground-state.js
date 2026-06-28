@@ -197,6 +197,7 @@ function normalizeReplayEvent(event = {}, index = 0, table = {}) {
 function buildZones(deckJson = {}, cards = []) {
   const zones = {
     legend_zone: [],
+    champion_zone: [],
     battlefields: [],
     base: [],
     main_deck: [],
@@ -221,7 +222,7 @@ function buildZones(deckJson = {}, cards = []) {
 function deckEntries(deckJson = {}, cards = []) {
   const rawEntries = Array.isArray(deckJson.entries)
     ? deckJson.entries
-    : ["legends", "main", "runes", "battlefields"].flatMap((section) =>
+    : ["legends", "champions", "main", "runes", "battlefields"].flatMap((section) =>
         (deckJson[section] || []).map((entry) => ({ ...entry, section }))
       );
   return rawEntries
@@ -236,9 +237,11 @@ function deckEntries(deckJson = {}, cards = []) {
 function sectionFromCatalog(id, cards = []) {
   const card = cards.find((item) => String(item.id).toUpperCase() === String(id).toUpperCase());
   const type = String(card?.card_type || "").toLowerCase();
+  const supertype = String(card?.supertype || "").toLowerCase();
   if (type === "rune") return "runes";
   if (type === "legend") return "legends";
   if (type === "battlefield") return "battlefields";
+  if (supertype === "champion") return "champions";
   return "main";
 }
 
@@ -251,6 +254,7 @@ function zoneForDeckSection(section = "") {
   const normalized = zoneName(section);
   if (["runes", "rune", "rune_deck"].includes(normalized)) return "rune_deck";
   if (["legends", "legend", "legend_zone"].includes(normalized)) return "legend_zone";
+  if (["champions", "champion", "champion_zone"].includes(normalized)) return "champion_zone";
   if (["battlefields", "battlefield_cards"].includes(normalized)) return "battlefields";
   return "main_deck";
 }
@@ -463,7 +467,7 @@ function beginTurn(table, userId) {
 }
 
 function readySeatCards(seat) {
-  for (const zone of ["legend_zone", "battlefields", "base", "rune_pool", "battlefield"]) {
+  for (const zone of ["legend_zone", "champion_zone", "battlefields", "base", "rune_pool", "battlefield"]) {
     for (const card of seat.zones?.[zone] || []) card.exhausted = false;
   }
 }

@@ -32,6 +32,12 @@ function battlefieldDeck(id = "deck-1") {
   return deck;
 }
 
+function championDeck(id = "deck-1") {
+  const deck = savedDeck(id);
+  deck.deck_json.entries.push({ id: "OGN-066", quantity: 1, section: "champions" });
+  return deck;
+}
+
 test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   const deck = savedDeck();
   const table = createPlaygroundTable({ id: "table-1", savedDeck: deck, user: host, now: 1000 });
@@ -51,6 +57,14 @@ test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   assert.deepEqual(table.seats[0].zones.chain, []);
   assert.deepEqual(table.seats[0].zones.rune_pool, []);
   assert.equal(table.seats[0].points, 0);
+});
+
+test("createPlaygroundTable separates the chosen champion into champion zone", () => {
+  const table = createPlaygroundTable({ id: "table-1", savedDeck: championDeck(), user: host, now: 1000 });
+
+  assert.equal(table.seats[0].zones.champion_zone.length, 1);
+  assert.equal(table.seats[0].zones.champion_zone[0].id, "OGN-066");
+  assert.equal(table.seats[0].zones.main_deck.length, 5);
 });
 
 test("score point completes a table when a player reaches the victory score with the lead", () => {

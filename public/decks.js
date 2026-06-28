@@ -9,7 +9,7 @@ import {
   splitRuneChannels,
   summarizeDeck,
   validateRiftboundDeck,
-} from "/deck-utils.js?v=20260628-runechannels1";
+} from "/deck-utils.js?v=20260628-champions1";
 import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 
 const STORAGE_KEY = "riftbound.deck.v2";
@@ -17,12 +17,14 @@ const RESULT_LIMIT = 80;
 const RUNE_CHANNEL_LABELS = ["Rune channel 1", "Rune channel 2"];
 const RUNE_CHANNEL_TARGET = 6;
 const sectionLabels = {
+  champions: "Champion",
   main: "Main Deck",
   runes: "Rune Deck",
   legends: "Legend",
   battlefields: "Battlefields",
 };
 const sectionTargets = {
+  champions: 1,
   main: "40+",
   runes: 12,
   legends: 1,
@@ -177,7 +179,7 @@ async function saveCurrentDeck() {
   const payload = {
     name,
     format: "constructed",
-    deck_json: { entries: deckEntries() },
+    deck_json: { entries: savedDeckEntries() },
   };
   try {
     const response = await fetch("/api/saved-decks", {
@@ -266,6 +268,7 @@ function renderDeckBoard() {
   const validation = validateRiftboundDeck(sections);
   els.deckStats.replaceChildren(
     statNode(validation.counts.main, "main / 40+"),
+    statNode(validation.counts.champions, "champion / 1"),
     statNode(validation.counts.runes, "runes / 12"),
     statNode(validation.counts.legends, "legend / 1"),
     statNode(validation.counts.battlefields, "fields / 3")
@@ -283,7 +286,7 @@ function renderDeckBoard() {
   renderTopDeckList(sections, validation);
 
   const fragment = document.createDocumentFragment();
-  for (const section of ["legends", "main", "runes", "battlefields"]) {
+  for (const section of ["legends", "champions", "main", "runes", "battlefields"]) {
     fragment.append(sectionNode(section, sections[section] ?? [], sectionTargets[section]));
   }
   els.deckSections.replaceChildren(fragment);
@@ -298,6 +301,7 @@ function renderTopDeckList(sections, validation) {
 
   els.cardDeckList.replaceChildren(
     compactSection("Chosen Legend", sections.legends ?? [], 1),
+    compactSection("Chosen Champion", sections.champions ?? [], 1),
     compactSection("Main Deck", sections.main ?? [], "40+"),
     compactSection("Battlefields", sections.battlefields ?? [], 3)
   );
@@ -499,10 +503,16 @@ function deckEntries() {
   return [...state.deck.entries()].map(([id, quantity]) => ({ id, quantity }));
 }
 
+function savedDeckEntries() {
+  return flattenDeckSections(currentSections())
+    .filter((entry) => entry.section !== "unknown")
+    .map(({ id, quantity, section }) => ({ id, quantity, section }));
+}
+
 function entriesFromSavedDeck(deckJson = {}) {
   if (Array.isArray(deckJson.entries)) return normalizedDeckEntries(deckJson.entries);
   return normalizedDeckEntries(
-    ["legends", "main", "runes", "battlefields"].flatMap((section) => deckJson[section] || [])
+    ["legends", "champions", "main", "runes", "battlefields"].flatMap((section) => deckJson[section] || [])
   );
 }
 

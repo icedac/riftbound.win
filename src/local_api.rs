@@ -1303,6 +1303,7 @@ fn build_playground_zones(deck_json: &Value) -> Value {
     let mut main_deck = Vec::new();
     let mut rune_deck = Vec::new();
     let mut legend_zone = Vec::new();
+    let mut champion_zone = Vec::new();
     let mut battlefields = Vec::new();
     for entry in deck_entries(deck_json) {
         for index in 0..entry.quantity {
@@ -1313,6 +1314,7 @@ fn build_playground_zones(deck_json: &Value) -> Value {
             match zone_for_deck_section(&entry.section) {
                 "rune_deck" => rune_deck.push(card),
                 "legend_zone" => legend_zone.push(card),
+                "champion_zone" => champion_zone.push(card),
                 "battlefields" => battlefields.push(card),
                 _ => main_deck.push(card),
             }
@@ -1320,6 +1322,7 @@ fn build_playground_zones(deck_json: &Value) -> Value {
     }
     json!({
         "legend_zone": legend_zone,
+        "champion_zone": champion_zone,
         "battlefields": battlefields,
         "base": [],
         "main_deck": main_deck,
@@ -1338,6 +1341,7 @@ fn zone_for_deck_section(section: &str) -> &'static str {
     match zone_name(section).as_str() {
         "runes" | "rune" | "rune_deck" => "rune_deck",
         "legends" | "legend" | "legend_zone" => "legend_zone",
+        "champions" | "champion" | "champion_zone" => "champion_zone",
         "battlefields" | "battlefield_cards" => "battlefields",
         _ => "main_deck",
     }
@@ -1353,7 +1357,7 @@ fn deck_entries(deck_json: &Value) -> Vec<DeckEntry> {
     if let Some(entries) = deck_json.get("entries").and_then(Value::as_array) {
         return entries.iter().filter_map(deck_entry_from_value).collect();
     }
-    ["legends", "main", "runes", "battlefields"]
+    ["legends", "champions", "main", "runes", "battlefields"]
         .iter()
         .flat_map(|section| {
             deck_json
@@ -1857,6 +1861,7 @@ fn ready_playground_seat(table: &mut Value, seat_index: usize) {
     };
     for zone in [
         "legend_zone",
+        "champion_zone",
         "battlefields",
         "base",
         "rune_pool",

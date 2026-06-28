@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground15";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground16";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -14,6 +14,7 @@ const TABLES_API = "/api/playground/tables";
 const POLL_MS = 2500;
 const PLAYGROUND_ZONE_ORDER = [
   "legend_zone",
+  "champion_zone",
   "battlefields",
   "base",
   "main_deck",

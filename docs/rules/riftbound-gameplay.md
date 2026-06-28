@@ -24,9 +24,9 @@ The first playable slice should model table flow, piles, public logs, card movem
 - The setup process draws 4 cards for each player, then allows a mulligan flow, then starts with the first player.
 
 Playground implication:
-- Keep `legend_zone`, `battlefields`, `base`, `main_deck`, `rune_deck`, `rune_pool`, `hand`, `chain`, `battlefield`, `discard`, `removed`, and `revealed` zones.
-- `legend_zone` and `battlefields` are public setup zones. `base` is the first manual play destination for cards that should enter a player's base before a stricter card-type resolver exists.
-- Add a future `champion_zone` once the deck editor can mark the chosen champion distinctly from the rest of the Main Deck.
+- Keep `legend_zone`, `champion_zone`, `battlefields`, `base`, `main_deck`, `rune_deck`, `rune_pool`, `hand`, `chain`, `battlefield`, `discard`, `removed`, and `revealed` zones.
+- `legend_zone`, `champion_zone`, and `battlefields` are public setup zones. `base` is the first manual play destination for cards that should enter a player's base before a stricter card-type resolver exists.
+- Saved deck entries preserve section metadata. Unit Champions are counted toward the Main Deck requirement but start in `champion_zone` rather than being shuffled into `main_deck`.
 - Playground API responses now mask Main Deck, Rune Deck, opponent hands, and opponent face-down cards with hidden placeholders while preserving card counts.
 - Stored table snapshots remain complete so owner actions and replay reduction can stay deterministic. User-facing HTTP/WebSocket snapshots are derived views.
 - `deck.shuffle` shuffles a player's `main_deck` or `rune_deck` before or during play while preserving secret visibility and replay determinism.

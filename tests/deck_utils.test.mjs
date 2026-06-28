@@ -16,6 +16,7 @@ import {
 
 const cards = [
   { id: "OGN-111", name: "Heimerdinger - Inventor", colors: ["Mind"], card_type: "Unit", cost: "3" },
+  { id: "OGN-066", name: "Ahri - Alluring", colors: ["Mind"], card_type: "Unit", supertype: "Champion", cost: "2" },
   { id: "OGN-001", name: "Blazing Scorcher", colors: ["Fury"], card_type: "Unit", cost: "1" },
   { id: "SFD-001", name: "Against the Odds", colors: ["Fury"], card_type: "Spell", cost: "2" },
   { id: "UNL-236-STAR", name: "Kha'Zix - Voidreaver", colors: ["Body", "Chaos"], card_type: "Legend" },
@@ -109,6 +110,7 @@ test("classifies cards into Riftbound deck sections", () => {
   const index = createCardIndex(cards);
 
   assert.equal(sectionForCard(index.byId.get("OGN-111")), "main");
+  assert.equal(sectionForCard(index.byId.get("OGN-066")), "champions");
   assert.equal(sectionForCard(index.byId.get("OGN-126")), "runes");
   assert.equal(sectionForCard(index.byId.get("UNL-236-STAR")), "legends");
   assert.equal(sectionForCard(index.byId.get("UNL-205")), "battlefields");
@@ -119,6 +121,7 @@ test("builds sectioned deck state from flat import entries", () => {
   const sections = buildDeckSections(
     [
       { id: "OGN-111", quantity: 3 },
+      { id: "OGN-066", quantity: 1 },
       { id: "OGN-126", quantity: 2 },
       { id: "OGN-042", quantity: 2 },
       { id: "UNL-236-STAR", quantity: 1 },
@@ -128,6 +131,7 @@ test("builds sectioned deck state from flat import entries", () => {
   );
 
   assert.deepEqual(sections.main.map((entry) => [entry.id, entry.quantity]), [["OGN-111", 3]]);
+  assert.deepEqual(sections.champions.map((entry) => [entry.id, entry.quantity]), [["OGN-066", 1]]);
   assert.deepEqual(sections.runes.map((entry) => [entry.id, entry.quantity]), [
     ["OGN-126", 2],
     ["OGN-042", 2],
@@ -137,6 +141,60 @@ test("builds sectioned deck state from flat import entries", () => {
 });
 
 test("validates Riftbound constructed deck counts", () => {
+  const index = createCardIndex(cards);
+  const sections = buildDeckSections(
+    [
+      ...cards
+        .filter((card) => card.id.startsWith("TST-"))
+        .slice(0, 13)
+        .map((card) => ({ id: card.id, quantity: 3 })),
+      { id: "OGN-066", quantity: 1 },
+      { id: "OGN-126", quantity: 10 },
+      { id: "OGN-042", quantity: 2 },
+      { id: "UNL-236-STAR", quantity: 1 },
+      { id: "UNL-205", quantity: 1 },
+      { id: "UNL-206", quantity: 1 },
+      { id: "OGN-275", quantity: 1 },
+    ],
+    index
+  );
+
+  const validation = validateRiftboundDeck(sections);
+
+  assert.equal(validation.counts.main, 40);
+  assert.equal(validation.counts.champions, 1);
+  assert.equal(validation.counts.runes, 12);
+  assert.equal(validation.counts.legends, 1);
+  assert.equal(validation.counts.battlefields, 3);
+  assert.deepEqual(validation.errors, []);
+});
+
+test("allows main decks above the 40 card minimum from the core rules", () => {
+  const index = createCardIndex(cards);
+  const sections = buildDeckSections(
+    [
+      ...cards
+        .filter((card) => card.id.startsWith("TST-"))
+        .map((card, idx) => ({ id: card.id, quantity: idx === 13 ? 1 : 3 })),
+      { id: "OGN-066", quantity: 1 },
+      { id: "OGN-126", quantity: 10 },
+      { id: "OGN-042", quantity: 2 },
+      { id: "UNL-236-STAR", quantity: 1 },
+      { id: "UNL-205", quantity: 1 },
+      { id: "UNL-206", quantity: 1 },
+      { id: "OGN-275", quantity: 1 },
+    ],
+    index
+  );
+
+  const validation = validateRiftboundDeck(sections);
+
+  assert.equal(validation.counts.main, 41);
+  assert.equal(validation.counts.champions, 1);
+  assert(!validation.errors.some((message) => /main deck/i.test(message)));
+});
+
+test("requires exactly one champion while counting it toward the main deck", () => {
   const index = createCardIndex(cards);
   const sections = buildDeckSections(
     [
@@ -156,33 +214,8 @@ test("validates Riftbound constructed deck counts", () => {
   const validation = validateRiftboundDeck(sections);
 
   assert.equal(validation.counts.main, 40);
-  assert.equal(validation.counts.runes, 12);
-  assert.equal(validation.counts.legends, 1);
-  assert.equal(validation.counts.battlefields, 3);
-  assert.deepEqual(validation.errors, []);
-});
-
-test("allows main decks above the 40 card minimum from the core rules", () => {
-  const index = createCardIndex(cards);
-  const sections = buildDeckSections(
-    [
-      ...cards
-        .filter((card) => card.id.startsWith("TST-"))
-        .map((card, idx) => ({ id: card.id, quantity: idx === 13 ? 2 : 3 })),
-      { id: "OGN-126", quantity: 10 },
-      { id: "OGN-042", quantity: 2 },
-      { id: "UNL-236-STAR", quantity: 1 },
-      { id: "UNL-205", quantity: 1 },
-      { id: "UNL-206", quantity: 1 },
-      { id: "OGN-275", quantity: 1 },
-    ],
-    index
-  );
-
-  const validation = validateRiftboundDeck(sections);
-
-  assert.equal(validation.counts.main, 41);
-  assert(!validation.errors.some((message) => /main deck/i.test(message)));
+  assert.equal(validation.counts.champions, 0);
+  assert(validation.errors.some((message) => /champion/i.test(message)));
 });
 
 test("validates the three-copy limit for main deck cards but not rune quantities", () => {
@@ -190,6 +223,7 @@ test("validates the three-copy limit for main deck cards but not rune quantities
   const sections = buildDeckSections(
     [
       { id: "OGN-111", quantity: 4 },
+      { id: "OGN-066", quantity: 1 },
       { id: "OGN-126", quantity: 10 },
       { id: "OGN-042", quantity: 2 },
       { id: "UNL-236-STAR", quantity: 1 },
@@ -215,6 +249,7 @@ test("validates main deck copy limits by card name across print variants", () =>
     [
       { id: "OGN-111", quantity: 3 },
       { id: "OGN-111a", quantity: 1 },
+      { id: "OGN-066", quantity: 1 },
       { id: "OGN-126", quantity: 10 },
       { id: "OGN-042", quantity: 2 },
       { id: "UNL-236-STAR", quantity: 1 },

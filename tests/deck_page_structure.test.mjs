@@ -28,6 +28,7 @@ test("deck editor exposes saved deck controls backed by the API", () => {
   assert.match(js, /\/api\/saved-decks/);
   assert.match(js, /saveCurrentDeck/);
   assert.match(js, /loadSelectedDeck/);
+  assert.match(js, /savedDeckEntries/);
 });
 
 test("deck editor keeps deck list, card picker, and inspector in a first-viewport workspace", () => {

@@ -413,6 +413,7 @@ async fn create_test_deck_with_runes(
           "format": "constructed",
           "deck_json": {{
             "legends": [{{"id": "UNL-236-STAR", "quantity": 1}}],
+            "champions": [{{"id": "OGN-066", "quantity": 1}}],
             "main": [{{"id": "OGN-001", "quantity": 5}}],
             "runes": [{{"id": "OGN-R01", "quantity": {rune_quantity}}}],
             "battlefields": [{{"id": "UNL-205", "quantity": 1}}, {{"id": "UNL-206", "quantity": 1}}, {{"id": "OGN-275", "quantity": 1}}]
@@ -512,6 +513,10 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     assert_eq!(
         created["table"]["seats"][0]["zones"]["legend_zone"][0]["id"],
         "UNL-236-STAR"
+    );
+    assert_eq!(
+        created["table"]["seats"][0]["zones"]["champion_zone"][0]["id"],
+        "OGN-066"
     );
     assert_eq!(
         created["table"]["seats"][0]["zones"]["battlefields"]

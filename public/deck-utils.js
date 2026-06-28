@@ -105,18 +105,21 @@ export function summarizeDeck(entries = [], cardsOrIndex = []) {
 
 export function sectionForCard(card) {
   const type = String(card?.card_type ?? "").toLowerCase();
+  const supertype = String(card?.supertype ?? "").toLowerCase();
   if (type === "rune") return "runes";
   if (type === "legend") return "legends";
   if (type === "battlefield") return "battlefields";
+  if (supertype === "champion") return "champions";
   return "main";
 }
 
 export function buildDeckSections(entries = [], cardsOrIndex = []) {
   const index = ensureIndex(cardsOrIndex);
   const sections = {
+    legends: [],
+    champions: [],
     main: [],
     runes: [],
-    legends: [],
     battlefields: [],
     unknown: [],
   };
@@ -161,14 +164,15 @@ export function splitRuneChannels(entries = [], channelCount = 2) {
 }
 
 export function flattenDeckSections(sections = {}) {
-  return ["main", "runes", "legends", "battlefields", "unknown"].flatMap((section) =>
+  return ["legends", "champions", "main", "runes", "battlefields", "unknown"].flatMap((section) =>
     (sections[section] ?? []).map((entry) => ({ ...entry, section }))
   );
 }
 
 export function validateRiftboundDeck(sections = {}) {
   const counts = {
-    main: countSection(sections.main),
+    champions: countSection(sections.champions),
+    main: countSection(sections.main) + countSection(sections.champions),
     runes: countSection(sections.runes),
     legends: countSection(sections.legends),
     battlefields: countSection(sections.battlefields),
@@ -177,12 +181,13 @@ export function validateRiftboundDeck(sections = {}) {
   const warnings = [];
 
   if (counts.main < 40) errors.push(`Main deck must include at least 40 cards. Current: ${counts.main}.`);
+  if (counts.champions !== 1) errors.push(`Choose exactly 1 champion. Current: ${counts.champions}.`);
   if (counts.runes !== 12) errors.push(`Rune deck must be exactly 12 runes. Current: ${counts.runes}.`);
   if (counts.legends !== 1) errors.push(`Choose exactly 1 legend. Current: ${counts.legends}.`);
   if (counts.battlefields !== 3) errors.push(`Choose exactly 3 battlefields. Current: ${counts.battlefields}.`);
 
   const mainCopiesByName = new Map();
-  for (const entry of sections.main ?? []) {
+  for (const entry of [...(sections.main ?? []), ...(sections.champions ?? [])]) {
     const quantity = Number(entry.quantity) || 0;
     const id = normalizeCardId(entry.id);
     const name = entry.card?.name || id;
