@@ -2278,6 +2278,15 @@ dialog::backdrop {
   padding: 14px;
 }
 
+.playground-table {
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 240px);
+  grid-template-areas:
+    "topline topline"
+    "tools tools"
+    "board preview";
+  align-items: start;
+}
+
 .playground-toolbar {
   display: grid;
   grid-template-columns: 1fr;
@@ -2320,6 +2329,7 @@ dialog::backdrop {
 }
 
 .table-topline {
+  grid-area: topline;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
@@ -2364,6 +2374,7 @@ dialog::backdrop {
 }
 
 .selected-card-tools {
+  grid-area: tools;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
@@ -2400,6 +2411,7 @@ dialog::backdrop {
 }
 
 .table-zones {
+  grid-area: board;
   display: grid;
   gap: 14px;
 }
@@ -2651,12 +2663,16 @@ dialog::backdrop {
 
 .card-hover-preview {
   position: sticky;
-  bottom: 12px;
+  top: 76px;
+  grid-area: preview;
   display: grid;
-  width: min(260px, 100%);
+  width: 100%;
+  max-height: calc(100svh - 92px);
   min-height: 156px;
+  align-self: start;
+  overflow: auto;
   gap: 7px;
-  margin-top: 12px;
+  margin-top: 0;
   padding: 10px;
   border: 1px solid rgb(245 158 11 / 42%);
   border-radius: 7px;
@@ -2767,6 +2783,15 @@ dialog::backdrop {
 @media (max-width: 760px) {
   .playground-shell {
     grid-template-columns: 1fr;
+  }
+
+  .playground-table {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topline"
+      "tools"
+      "preview"
+      "board";
   }
 
   .table-topline,

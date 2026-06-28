@@ -165,6 +165,10 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /mouseover/);
   assert.match(js, /focusin/);
   assert.match(css, /\.card-hover-preview/);
+  assert.match(css, /\.playground-table\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(190px, 240px\)/s);
+  assert.match(css, /\.table-zones\s*\{[^}]*grid-area: board;/s);
+  assert.match(css, /\.card-hover-preview\s*\{[^}]*grid-area: preview;/s);
+  assert.doesNotMatch(css, /\.card-hover-preview\s*\{[^}]*bottom:/s);
   assert.match(css, /\.seat-board\.is-current-player/);
   assert.match(css, /\.seat-board\.is-current-player \.zone-grid/);
   assert.match(css, /\.seat-board\.is-opponent-player \.zone-grid/);
