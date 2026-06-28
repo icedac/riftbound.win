@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { nextVisibleCount, hasMoreCards, shouldAutoLoad } from "../public/paging.js";
+import { nextAutoVisibleCount, nextVisibleCount, hasMoreCards, shouldAutoLoad } from "../public/paging.js";
 
 test("nextVisibleCount advances by one page without exceeding total cards", () => {
   assert.equal(nextVisibleCount(96, 1147), 192);
@@ -17,4 +17,18 @@ test("hasMoreCards tracks whether the automatic pager should keep observing", ()
 test("shouldAutoLoad triggers before the sentinel enters the viewport", () => {
   assert.equal(shouldAutoLoad({ sentinelTop: 1500, viewportHeight: 720 }), true);
   assert.equal(shouldAutoLoad({ sentinelTop: 1800, viewportHeight: 720 }), false);
+});
+
+test("nextAutoVisibleCount keeps revealing pages while the sentinel remains near the viewport", () => {
+  assert.equal(
+    nextAutoVisibleCount({
+      current: 96,
+      total: 1147,
+      pageSize: 96,
+      sentinelTop: 700,
+      viewportHeight: 720,
+      estimatedPageHeight: 600,
+    }),
+    288
+  );
 });

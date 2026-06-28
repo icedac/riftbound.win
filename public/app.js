@@ -1,5 +1,5 @@
 import { appendFoilLayers, bindFoilSurface } from "/foil.js";
-import { PAGE_SIZE, hasMoreCards, nextVisibleCount, shouldAutoLoad } from "/paging.js";
+import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js";
 
 const state = {
   cards: [],
@@ -167,16 +167,39 @@ function maybeAutoLoad() {
   if (!els.sentinel || els.sentinel.hidden) return;
   if (!hasMoreCards(state.visibleCount, state.filtered.length)) return;
   const rect = els.sentinel.getBoundingClientRect();
-  if (shouldAutoLoad({ sentinelTop: rect.top, viewportHeight: window.innerHeight })) {
-    revealNextPage();
+  const next = nextAutoVisibleCount({
+    current: state.visibleCount,
+    total: state.filtered.length,
+    pageSize: PAGE_SIZE,
+    sentinelTop: rect.top,
+    viewportHeight: window.innerHeight,
+    estimatedPageHeight: estimatePageHeight(PAGE_SIZE),
+  });
+  if (next !== state.visibleCount) {
+    state.visibleCount = next;
+    render();
   }
 }
 
 function revealNextPage() {
-  const next = nextVisibleCount(state.visibleCount, state.filtered.length, PAGE_SIZE);
-  if (next === state.visibleCount) return;
-  state.visibleCount = next;
-  render();
+  scheduleAutoLoad();
+}
+
+function estimatePageHeight(pageSize) {
+  if (!els.grid) return window.innerHeight;
+
+  const firstCard = els.grid.querySelector(".card");
+  if (!firstCard) return window.innerHeight;
+
+  const gridStyles = getComputedStyle(els.grid);
+  const columns = gridStyles.gridTemplateColumns
+    .split(" ")
+    .map((column) => column.trim())
+    .filter(Boolean).length;
+  const rowGap = Number.parseFloat(gridStyles.rowGap || gridStyles.gap || "0") || 0;
+  const cardHeight = firstCard.getBoundingClientRect().height || window.innerHeight;
+
+  return Math.ceil(pageSize / Math.max(1, columns)) * (cardHeight + rowGap);
 }
 
 function cardNode(card) {
