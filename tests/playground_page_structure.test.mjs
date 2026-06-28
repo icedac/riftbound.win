@@ -64,5 +64,6 @@ test("playground client does not block profile and table boot on the card catalo
 
   assert.match(js, /async function loadProfile/);
   assert.match(js, /async function loadCardsQuietly/);
+  assert.match(js, /render\(\);\s+await loadProfile/);
   assert.doesNotMatch(js, /Promise\.all\(\s*\[\s*fetchJson\("\/cards\.json"/);
 });

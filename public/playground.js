@@ -62,6 +62,7 @@ async function boot() {
   bindEvents();
   const pathTableId = tableIdFromPath();
   if (pathTableId) state.selectedTableId = pathTableId;
+  render();
   await loadProfile();
   await Promise.all([loadSavedDecks(), loadTables()]);
   render();
