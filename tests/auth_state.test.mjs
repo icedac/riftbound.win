@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { authProviderActions, authProviderDetail, authReadinessMessage } from "../public/auth-state.js";
+import {
+  authProviderActions,
+  authProviderDetail,
+  authProviderLabel,
+  authReadinessMessage,
+} from "../public/auth-state.js";
 
 test("authProviderActions returns enabled login links only for configured providers", () => {
   const actions = authProviderActions({
@@ -67,6 +72,11 @@ test("authProviderDetail explains missing setup and callback URLs", () => {
     "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET · callback https://riftbound.kr/api/auth/google/callback"
   );
   assert.equal(authProviderDetail(naver), "Ready · callback https://riftbound.kr/api/auth/naver/callback");
+});
+
+test("authProviderLabel makes unconfigured header buttons explicit", () => {
+  assert.equal(authProviderLabel({ label: "Google", enabled: true }), "Google");
+  assert.equal(authProviderLabel({ label: "Naver", enabled: false }), "Naver setup");
 });
 
 test("authReadinessMessage names missing provider setup", () => {

@@ -30,6 +30,10 @@ export function authProviderDetail(action = {}) {
   return `${action.status || "Ready"}${callback}`;
 }
 
+export function authProviderLabel(action = {}) {
+  return action.enabled === false ? `${action.label || "Login"} setup` : action.label || "Login";
+}
+
 export function authReadinessMessage(me = {}) {
   const missing = authProviderActions(me).filter((action) => !action.enabled);
   if (missing.length === 0) return "Sign in with Google or Naver.";

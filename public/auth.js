@@ -1,4 +1,8 @@
-import { authProviderActions, authProviderDetail } from "/auth-state.js?v=20260628-authsetup1";
+import {
+  authProviderActions,
+  authProviderDetail,
+  authProviderLabel,
+} from "/auth-state.js?v=20260628-authlabel1";
 
 const shell = document.querySelector("[data-auth-shell]");
 
@@ -37,10 +41,11 @@ function renderSignedOut(me) {
 }
 
 function providerAction(action) {
-  const link = buttonLink(action.href, action.label);
+  const link = buttonLink(action.href, authProviderLabel(action));
   if (!action.enabled) {
     link.className = "auth-unconfigured";
     link.setAttribute("aria-disabled", "true");
+    link.setAttribute("aria-label", authProviderDetail(action));
     link.title = authProviderDetail(action);
   }
   return link;
