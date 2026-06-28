@@ -35,6 +35,15 @@ test("cards page cache-busts its application script", async () => {
   assert.doesNotMatch(html, /src="\/app\.js"/);
 });
 
+test("cards app cache-busts its module imports", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+  for (const modulePath of ["/foil.js", "/card-filter-state.js", "/paging.js"]) {
+    assert.match(source, new RegExp(`from "${modulePath.replace(".", "\\.")}\\?v=[^"]+"`), modulePath);
+    assert.doesNotMatch(source, new RegExp(`from "${modulePath.replace(".", "\\.")}"`), modulePath);
+  }
+});
+
 test("public page scripts are cache-busted", async () => {
   for (const path of pages) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
