@@ -1,0 +1,11 @@
+name = "riftbound-playground-table"
+main = "workers/playground-table.js"
+compatibility_date = "2026-06-27"
+
+[[durable_objects.bindings]]
+name = "PLAYGROUND_TABLE"
+class_name = "PlaygroundTable"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PlaygroundTable"]

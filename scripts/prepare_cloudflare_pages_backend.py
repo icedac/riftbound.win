@@ -12,6 +12,8 @@ from pathlib import Path
 PROJECT_NAME = os.environ.get("CLOUDFLARE_PAGES_PROJECT", "riftbound-win")
 D1_NAME = os.environ.get("RIFTBOUND_D1_NAME", "riftbound-win")
 R2_BUCKET = os.environ.get("RIFTBOUND_R2_BUCKET", "riftbound-win-media")
+PLAYGROUND_DO_WORKER = os.environ.get("RIFTBOUND_PLAYGROUND_DO_WORKER", "riftbound-playground-table")
+PLAYGROUND_DO_CLASS = os.environ.get("RIFTBOUND_PLAYGROUND_DO_CLASS", "PlaygroundTable")
 WRANGLER = os.environ.get("WRANGLER_CMD", "npx --yes wrangler@4.105.0")
 CONFIG_PATH = Path(os.environ.get("WRANGLER_CONFIG", "wrangler.toml"))
 START = "# BEGIN generated Riftbound backend bindings"
@@ -113,6 +115,11 @@ binding = "DB"
 database_name = "{toml_string(D1_NAME)}"
 database_id = "{toml_string(database_id)}"
 {r2_block.rstrip()}
+
+[[durable_objects.bindings]]
+name = "PLAYGROUND_TABLE"
+script_name = "{toml_string(PLAYGROUND_DO_WORKER)}"
+class_name = "{toml_string(PLAYGROUND_DO_CLASS)}"
 {END}
 """
     CONFIG_PATH.write_text(f"{current}{block}", encoding="utf-8")

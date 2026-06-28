@@ -34,6 +34,26 @@ class PrepareCloudflarePagesBackendTest(unittest.TestCase):
             self.assertIn('database_id = "d1-uuid"', config)
             self.assertNotIn("[[r2_buckets]]", config)
 
+    def test_writes_playground_durable_object_binding(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "wrangler.toml"
+            config_path.write_text(
+                'name = "riftbound-win"\n'
+                'pages_build_output_dir = "public"\n'
+                'compatibility_date = "2026-06-27"\n',
+                encoding="utf-8",
+            )
+            module.CONFIG_PATH = config_path
+
+            module.write_bindings("d1-uuid", include_r2=False)
+
+            config = config_path.read_text(encoding="utf-8")
+            self.assertIn("[[durable_objects.bindings]]", config)
+            self.assertIn('name = "PLAYGROUND_TABLE"', config)
+            self.assertIn('script_name = "riftbound-playground-table"', config)
+            self.assertIn('class_name = "PlaygroundTable"', config)
+
     def test_reads_existing_d1_database_id_from_config(self):
         module = load_module()
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -302,6 +302,8 @@ async function joinPlaygroundTable(request, env, tableId) {
   )
     .bind("active", now, JSON.stringify(table), tableId)
     .run();
+  await broadcastPlaygroundActorMessage(env, tableId, { type: "table.snapshot", table });
+  broadcastTableMessage(tableId, { type: "table.snapshot", table });
   return json({ table });
 }
 
@@ -343,6 +345,7 @@ async function appendPlaygroundEvent(request, env, tableId) {
   )
     .bind(now, JSON.stringify(table), status, tableId)
     .run();
+  await broadcastPlaygroundActorMessage(env, tableId, { type: "table.event", table, event });
   broadcastTableMessage(tableId, { type: "table.event", table, event });
   return json({ table, event }, 201);
 }
@@ -382,6 +385,8 @@ async function handlePlaygroundWebSocket(request, env, tableId) {
   if (!seat) return json({ error: "Table seat required" }, 403);
   const row = await playgroundTableRow(env, tableId);
   if (!row) return json({ error: "Table not found" }, 404);
+  const actorResponse = await forwardPlaygroundWebSocketToActor(env, request, tableId, session.user);
+  if (actorResponse) return actorResponse;
 
   const pair = new WebSocketPair();
   const [client, server] = Object.values(pair);
@@ -429,6 +434,45 @@ async function handlePlaygroundWebSocket(request, env, tableId) {
   server.addEventListener("error", () => unregisterPlaygroundSocket(tableId, session.user.id, server));
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+function playgroundTableActor(env, tableId) {
+  if (!env.PLAYGROUND_TABLE?.idFromName || !env.PLAYGROUND_TABLE?.get) return null;
+  return env.PLAYGROUND_TABLE.get(env.PLAYGROUND_TABLE.idFromName(String(tableId)));
+}
+
+async function forwardPlaygroundWebSocketToActor(env, request, tableId, user) {
+  const actor = playgroundTableActor(env, tableId);
+  if (!actor) return null;
+  try {
+    const headers = new Headers(request.headers);
+    headers.set("x-riftbound-table-id", String(tableId));
+    headers.set("x-riftbound-user-id", user.id);
+    headers.set("x-riftbound-display-name", user.display_name || "Player");
+    return await actor.fetch(new Request(request, { headers }));
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+async function broadcastPlaygroundActorMessage(env, tableId, message) {
+  const actor = playgroundTableActor(env, tableId);
+  if (!actor) return false;
+  try {
+    const response = await actor.fetch("https://playground-table.internal/broadcast", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-riftbound-table-id": String(tableId),
+      },
+      body: JSON.stringify(message),
+    });
+    return response.ok;
+  } catch (error) {
+    console.error(error);
+    return false;
+  }
 }
 
 async function startAuth(request, env, provider) {
