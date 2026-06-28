@@ -320,6 +320,44 @@ test("card exhaust state is logged and new turns ready channeled runes", () => {
   assert.equal(replayTableEvents(table.events)[2].summary, "Exhaust selected card in rune_pool");
 });
 
+test("rune spend and recycle track temporary energy through turns", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck("deck-1", 4), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2", 4), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "rune_deck", to: "rune_pool", count: 2 }, now: 1300 });
+  const spentRune = table.seats[0].zones.rune_pool[0].instance_id;
+  const recycledRune = table.seats[0].zones.rune_pool[1].instance_id;
+
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "rune.spend",
+    payload: { seat_index: 0, zone: "rune_pool", instance_id: spentRune },
+    now: 1350,
+  });
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "rune.recycle",
+    payload: { seat_index: 0, zone: "rune_pool", instance_id: recycledRune },
+    now: 1360,
+  });
+
+  assert.equal(table.seats[0].temporary_energy, 1);
+  assert.equal(table.seats[0].zones.rune_pool.length, 1);
+  assert.equal(table.seats[0].zones.rune_pool[0].instance_id, spentRune);
+  assert.equal(table.seats[0].zones.rune_pool[0].exhausted, true);
+  assert.equal(table.seats[0].zones.rune_deck.length, 3);
+  assert.equal(table.seats[0].zones.rune_deck.at(-1).instance_id, recycledRune);
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 1400 });
+  assert.equal(table.seats[0].temporary_energy, 0);
+
+  table = appendTableEvent(table, { actorId: guest.id, type: "turn.pass", payload: { to_user_id: host.id }, now: 1500 });
+  assert.equal(table.seats[0].zones.rune_pool.find((card) => card.instance_id === spentRune).exhausted, false);
+  assert.equal(replayTableEvents(table.events)[2].summary, "Spend rune");
+  assert.equal(replayTableEvents(table.events)[3].summary, "Recycle rune");
+  assert.equal(buildReplayFrames(table).at(-1).table.seats[0].temporary_energy, 0);
+});
+
 test("card events can move a selected instance and flip it in place", () => {
   let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
   table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 }, now: 1100 });

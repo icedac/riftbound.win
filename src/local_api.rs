@@ -1214,6 +1214,7 @@ fn create_seat_snapshot(
         "deck_snapshot": deck.deck_json,
         "joined_at": joined_at,
         "points": 0,
+        "temporary_energy": 0,
         "zones": build_playground_zones(&deck.deck_json),
     })
 }
@@ -1456,6 +1457,8 @@ fn private_zone_action_denied(
             | "card.exhaust"
             | "deck.shuffle"
             | "hand.mulligan"
+            | "rune.spend"
+            | "rune.recycle"
     ) {
         return false;
     }
@@ -1473,9 +1476,17 @@ fn private_zone_action_denied(
     if seat.get("user_id").and_then(Value::as_str) == Some(user.id.as_str()) {
         return false;
     }
+    if matches!(event_type, "rune.spend" | "rune.recycle") {
+        return true;
+    }
     let zone = if matches!(
         event_type,
-        "card.flip" | "card.exhaust" | "deck.shuffle" | "hand.mulligan"
+        "card.flip"
+            | "card.exhaust"
+            | "deck.shuffle"
+            | "hand.mulligan"
+            | "rune.spend"
+            | "rune.recycle"
     ) {
         payload
             .get("zone")
@@ -1484,6 +1495,8 @@ fn private_zone_action_denied(
                 "main_deck"
             } else if event_type == "hand.mulligan" {
                 "hand"
+            } else if matches!(event_type, "rune.spend" | "rune.recycle") {
+                "rune_pool"
             } else {
                 "battlefield"
             })
@@ -1520,6 +1533,8 @@ fn active_playground_event_type(value: &str) -> bool {
             | "card.reveal"
             | "card.flip"
             | "card.exhaust"
+            | "rune.spend"
+            | "rune.recycle"
             | "battlefield.claim"
             | "showdown.start"
             | "showdown.end"
@@ -1538,6 +1553,8 @@ fn turn_scoped_playground_event_type(value: &str) -> bool {
             | "card.reveal"
             | "card.flip"
             | "card.exhaust"
+            | "rune.spend"
+            | "rune.recycle"
             | "battlefield.claim"
             | "showdown.start"
             | "showdown.end"
@@ -1588,6 +1605,12 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     if event_type == "hand.mulligan" {
         apply_hand_mulligan(table, event);
     }
+    if event_type == "rune.spend" {
+        apply_rune_spend(table, event);
+    }
+    if event_type == "rune.recycle" {
+        apply_rune_recycle(table, event);
+    }
     if event_type == "battlefield.claim" {
         apply_battlefield_claim(table, event);
     }
@@ -1601,6 +1624,7 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         apply_turn_phase(table, event);
     }
     if event_type == "turn.pass" {
+        clear_temporary_energy(table);
         let to_user_id = event["payload"]
             .get("to_user_id")
             .and_then(Value::as_str)
@@ -1846,6 +1870,15 @@ fn ready_playground_seat(table: &mut Value, seat_index: usize) {
                 card.insert("exhausted".to_string(), json!(false));
             }
         }
+    }
+}
+
+fn clear_temporary_energy(table: &mut Value) {
+    let Some(seats) = table.get_mut("seats").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for seat in seats {
+        seat["temporary_energy"] = json!(0);
     }
 }
 
@@ -2202,6 +2235,98 @@ fn apply_card_exhaust(table: &mut Value, payload: &Value) {
     }
 }
 
+fn apply_rune_spend(table: &mut Value, event: &Value) {
+    let payload = &event["payload"];
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let should_increment = {
+        let Some(card) = selected_zone_card(table, payload, "rune_pool") else {
+            return;
+        };
+        let was_exhausted = card
+            .get("exhausted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if let Some(card) = card.as_object_mut() {
+            card.insert("exhausted".to_string(), json!(true));
+            card.insert("spent_at".to_string(), event["created_at"].clone());
+        }
+        !was_exhausted
+    };
+    if !should_increment {
+        return;
+    }
+    let Some(seat) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+    else {
+        return;
+    };
+    let current = seat
+        .get("temporary_energy")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    seat["temporary_energy"] = json!((current + 1).max(0));
+}
+
+fn apply_rune_recycle(table: &mut Value, event: &Value) {
+    let payload = &event["payload"];
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let zone = zone_name(
+        payload
+            .get("zone")
+            .and_then(Value::as_str)
+            .unwrap_or("rune_pool"),
+    );
+    let Some(seat) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+    else {
+        return;
+    };
+    let was_exhausted = {
+        let Some(zones) = seat.get_mut("zones").and_then(Value::as_object_mut) else {
+            return;
+        };
+        if !zones.get("rune_deck").is_some_and(Value::is_array) {
+            return;
+        }
+        let Some(zone_cards) = zones.get_mut(&zone).and_then(Value::as_array_mut) else {
+            return;
+        };
+        let Some(index) = selected_card_index(zone_cards, payload) else {
+            return;
+        };
+        let mut card = zone_cards.remove(index);
+        let was_exhausted = card
+            .get("exhausted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if let Some(card) = card.as_object_mut() {
+            card.remove("exhausted");
+            card.remove("spent_at");
+        }
+        if let Some(deck) = zones.get_mut("rune_deck").and_then(Value::as_array_mut) {
+            deck.push(card);
+        }
+        was_exhausted
+    };
+    if was_exhausted {
+        let current = seat
+            .get("temporary_energy")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
+        seat["temporary_energy"] = json!((current - 1).max(0));
+    }
+}
+
 fn apply_battlefield_claim(table: &mut Value, event: &Value) {
     let actor_id = event["actor_id"].as_str().unwrap_or_default().to_string();
     let created_at = event["created_at"].clone();
@@ -2501,6 +2626,8 @@ fn valid_playground_event_type(value: &str) -> bool {
             | "card.reveal"
             | "card.flip"
             | "card.exhaust"
+            | "rune.spend"
+            | "rune.recycle"
             | "battlefield.claim"
             | "showdown.start"
             | "showdown.end"

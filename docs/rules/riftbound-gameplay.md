@@ -31,6 +31,7 @@ Playground implication:
 - Stored table snapshots remain complete so owner actions and replay reduction can stay deterministic. User-facing HTTP/WebSocket snapshots are derived views.
 - `deck.shuffle` shuffles a player's `main_deck` or `rune_deck` before or during play while preserving secret visibility and replay determinism.
 - `setup.deal` deals each player a 4-card opening hand while the table remains in setup, and `hand.mulligan` returns selected hand cards to the Main Deck, shuffles, and redraws the same count.
+- `rune.spend` exhausts a selected rune in that player's `rune_pool` and increments `temporary_energy`; `rune.recycle` returns a selected rune from `rune_pool` to the bottom of `rune_deck`.
 
 ## Turn Skeleton
 
@@ -44,7 +45,7 @@ Playground implication:
 Playground implication:
 - `turn.pass` is valid as the coarse first version.
 - Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
-- Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.phase` records the current phase label (`ready`, `score`, `channel`, `draw`, `main`, or `end`) in snapshots, logs, and replay. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes, draws 1, increments `turn_number`, and returns `turn_phase` to `main`.
+- Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `rune.spend` and `rune.recycle` model temporary rune use and larger-cost rune recycling from the selected player's rune pool. `turn.phase` records the current phase label (`ready`, `score`, `channel`, `draw`, `main`, or `end`) in snapshots, logs, and replay. `turn.pass` clears temporary energy, readies the next active player's public/board objects, then channels 2 runes, draws 1, increments `turn_number`, and returns `turn_phase` to `main`.
 - Opening setup is explicit: the host can deal opening hands before `game.start`, and each player can mulligan selected cards from their own hand while the table is still waiting.
 - Battlefield control is modeled manually with `battlefield.claim`, which marks a public battlefield card with `controller_user_id`. Scoring from a selected battlefield sends `score.point` with `source: "battlefield"` and stores `last_scored_by` on that battlefield for logs and replay.
 - Showdowns are modeled manually with `showdown.start` and `showdown.end`. Starting a showdown records the contested battlefield in `active_showdown` and marks that battlefield as `contested`; ending it appends `showdown_history`, clears `active_showdown`, and, when a winner is chosen, assigns battlefield control to that winner.
@@ -64,7 +65,7 @@ Playground implication:
 Playground implication:
 - Current `card.move`, `card.reveal`, and `card.flip` are the right primitive operations for manual play. `chain` is a public zone for manually staging action/reaction cards before resolution.
 - `deck.shuffle` is the current primitive for randomizing Main Deck and Rune Deck order. The event reducer uses a persisted seed so replays rebuild the same pile order.
-- `card.exhaust` is the current primitive for sideways/ready state. It is intentionally manual; later resource payment automation can consume this same state rather than replacing the event log format.
+- `card.exhaust`, `rune.spend`, and `rune.recycle` are the current primitives for sideways/ready state and manual rune resource use. They are intentionally manual; later cost matching and card text automation can consume this same state rather than replacing the event log format.
 - `battlefield.claim` plus battlefield-sourced `score.point` is the current primitive for manual hold/conquer scoring. Later battlefield control automation should reduce into these same event shapes.
 - `showdown.start` plus `showdown.end` is the current primitive for contested battlefield resolution. It does not judge damage, action windows, or card text yet; it records the shared battlefield window and the agreed winner so the replay can show why control changed.
 - Add higher-level buttons only when their event payloads can still replay into the same primitive zone changes.

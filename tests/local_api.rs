@@ -1,6 +1,7 @@
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use riftbound_sim::local_api::{LocalApiOptions, build_local_api_router};
+use rusqlite::Connection;
 use serde_json::Value;
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -1008,6 +1009,169 @@ async fn local_playground_turn_start_readies_channeled_runes() {
         .find(|card| card["instance_id"] == selected_rune)
         .unwrap();
     assert_eq!(readied_rune["exhausted"], false);
+}
+
+#[tokio::test]
+async fn local_playground_rune_spend_and_recycle_actions() {
+    let (app, temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck_with_runes(&app, &host_cookie, "Host Resource Deck", 4).await;
+    let guest_deck =
+        create_test_deck_with_runes(&app, &guest_cookie, "Guest Resource Deck", 4).await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+
+    let channel = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(
+            r#"{"type":"card.move","payload":{"seat_index":0,"from":"rune_deck","to":"rune_pool","count":2}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(channel.status(), StatusCode::CREATED);
+    let channeled = json(channel).await;
+    let spent_rune = channeled["table"]["seats"][0]["zones"]["rune_pool"][0]["instance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let recycled_rune = channeled["table"]["seats"][0]["zones"]["rune_pool"][1]["instance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let guest_spend = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"rune.spend","payload":{{"seat_index":0,"zone":"rune_pool","instance_id":"{spent_rune}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(guest_spend.status(), StatusCode::FORBIDDEN);
+
+    let spend = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"rune.spend","payload":{{"seat_index":0,"zone":"rune_pool","instance_id":"{spent_rune}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(spend.status(), StatusCode::CREATED);
+    let spent = json(spend).await;
+    assert_eq!(spent["table"]["seats"][0]["temporary_energy"], 1);
+    assert_eq!(
+        spent["table"]["seats"][0]["zones"]["rune_pool"][0]["exhausted"],
+        true
+    );
+
+    let recycle = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"rune.recycle","payload":{{"seat_index":0,"zone":"rune_pool","instance_id":"{recycled_rune}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(recycle.status(), StatusCode::CREATED);
+    let recycled = json(recycle).await;
+    assert_eq!(
+        recycled["table"]["seats"][0]["zones"]["rune_pool"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        recycled["table"]["seats"][0]["zones"]["rune_deck"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(
+        recycled["table"]["seats"][0]["zones"]["rune_deck"][2]["hidden"],
+        true
+    );
+    let conn = Connection::open(temp.path().join("riftbound.sqlite")).expect("open db");
+    let snapshot_json: String = conn
+        .query_row(
+            "SELECT active_snapshot_json FROM local_playground_tables WHERE id = ?1",
+            rusqlite::params![table_id],
+            |row| row.get(0),
+        )
+        .expect("snapshot");
+    let snapshot: Value = serde_json::from_str(&snapshot_json).expect("snapshot json");
+    assert_eq!(
+        snapshot["seats"][0]["zones"]["rune_deck"][2]["instance_id"],
+        recycled_rune
+    );
+
+    let pass = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"turn.pass","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(pass.status(), StatusCode::CREATED);
+    let passed = json(pass).await;
+    assert_eq!(passed["table"]["seats"][0]["temporary_energy"], 0);
 }
 
 #[tokio::test]

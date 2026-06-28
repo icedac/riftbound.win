@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground14";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground15";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -85,6 +85,8 @@ const els = {
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
   flipSelectedCard: document.querySelector("#flipSelectedCard"),
   exhaustSelectedCard: document.querySelector("#exhaustSelectedCard"),
+  spendRune: document.querySelector("#spendRune"),
+  recycleRune: document.querySelector("#recycleRune"),
   claimBattlefield: document.querySelector("#claimBattlefield"),
   startShowdown: document.querySelector("#startShowdown"),
   showdownWinnerSelect: document.querySelector("#showdownWinnerSelect"),
@@ -158,6 +160,8 @@ function bindEvents() {
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
   els.exhaustSelectedCard.addEventListener("click", exhaustSelectedCard);
+  els.spendRune.addEventListener("click", spendSelectedRune);
+  els.recycleRune.addEventListener("click", recycleSelectedRune);
   els.claimBattlefield.addEventListener("click", claimSelectedBattlefield);
   els.startShowdown.addEventListener("click", startSelectedShowdown);
   els.endShowdown.addEventListener("click", endCurrentShowdown);
@@ -306,6 +310,27 @@ async function exhaustSelectedCard() {
     instance_id: selected.instanceId,
     exhausted: selected.card.exhausted !== true,
   });
+}
+
+async function spendSelectedRune() {
+  const selected = selectedCardRecord();
+  if (!selected || selected.zone !== "rune_pool" || selected.seat.user_id !== currentUserId()) return;
+  await appendAction("rune.spend", {
+    seat_index: selected.seatIndex,
+    zone: selected.zone,
+    instance_id: selected.instanceId,
+  });
+}
+
+async function recycleSelectedRune() {
+  const selected = selectedCardRecord();
+  if (!selected || selected.zone !== "rune_pool" || selected.seat.user_id !== currentUserId()) return;
+  await appendAction("rune.recycle", {
+    seat_index: selected.seatIndex,
+    zone: selected.zone,
+    instance_id: selected.instanceId,
+  });
+  state.selectedCard = null;
 }
 
 async function claimSelectedBattlefield() {
@@ -597,6 +622,9 @@ function renderTable() {
   for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard, els.claimBattlefield]) {
     control.disabled = !isTableActive(table) || controlsDisabled || !selected;
   }
+  const selectedOwnRune = selected?.zone === "rune_pool" && selected?.seat?.user_id === currentUserId();
+  els.spendRune.disabled = !isTableActive(table) || controlsDisabled || !selectedOwnRune;
+  els.recycleRune.disabled = !isTableActive(table) || controlsDisabled || !selectedOwnRune;
   els.claimBattlefield.disabled = els.claimBattlefield.disabled || selected?.zone !== "battlefields";
   els.startShowdown.disabled = !isTableActive(table) || controlsDisabled || !selected || selected.zone !== "battlefields";
   els.showdownWinnerSelect.disabled = !isTableActive(table) || controlsDisabled || !table?.active_showdown;
@@ -696,7 +724,9 @@ function renderReplayFrame() {
   const seats = (table.seats || []).map((seat) =>
     text(
       "p",
-      `${seat.display_name}: hand ${zoneCount(seat, "hand")} · deck ${zoneCount(seat, "main_deck")} · runes ${zoneCount(seat, "rune_pool")} · board ${zoneCount(
+      `${seat.display_name}: hand ${zoneCount(seat, "hand")} · deck ${zoneCount(seat, "main_deck")} · runes ${zoneCount(seat, "rune_pool")} · energy ${
+        seat.temporary_energy || 0
+      } · board ${zoneCount(
         seat,
         "battlefield"
       )} · points ${seat.points || 0}`
@@ -821,6 +851,8 @@ function eventSummary(event) {
   if (event.type === "card.exhaust") return `${event.payload?.exhausted === false ? "ready" : "exhaust"} ${event.payload?.zone || "battlefield"}`;
   if (event.type === "deck.shuffle") return `shuffle ${event.payload?.zone === "rune_deck" ? "runes" : "deck"}`;
   if (event.type === "hand.mulligan") return "mulligan selected";
+  if (event.type === "rune.spend") return "spend rune";
+  if (event.type === "rune.recycle") return "recycle rune";
   if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";

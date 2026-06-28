@@ -944,6 +944,77 @@ test("worker records card exhaust state and readies channeled runes on new turns
   assert.equal(returned.table.seats[0].zones.rune_pool.find((card) => card.instance_id === selectedRune).exhausted, false);
 });
 
+test("worker records rune spend and recycle resource actions", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db, { hostRunes: 4, guestRunes: 4 });
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  await postPlaygroundEvent(env, table.id, "host-session", "game.start");
+  const channel = await postPlaygroundEvent(env, table.id, "host-session", "card.move", {
+    seat_index: 0,
+    from: "rune_deck",
+    to: "rune_pool",
+    count: 2,
+  });
+  const channeled = await channel.json();
+  const spentRune = channeled.table.seats[0].zones.rune_pool[0].instance_id;
+  const recycledRune = channeled.table.seats[0].zones.rune_pool[1].instance_id;
+
+  const guestSpend = await postPlaygroundEvent(env, table.id, "guest-session", "rune.spend", {
+    seat_index: 0,
+    zone: "rune_pool",
+    instance_id: spentRune,
+  });
+  assert.equal(guestSpend.status, 403);
+
+  const spend = await postPlaygroundEvent(env, table.id, "host-session", "rune.spend", {
+    seat_index: 0,
+    zone: "rune_pool",
+    instance_id: spentRune,
+  });
+  assert.equal(spend.status, 201);
+  const spent = await spend.json();
+  assert.equal(spent.table.seats[0].temporary_energy, 1);
+  assert.equal(spent.table.seats[0].zones.rune_pool[0].exhausted, true);
+
+  const recycle = await postPlaygroundEvent(env, table.id, "host-session", "rune.recycle", {
+    seat_index: 0,
+    zone: "rune_pool",
+    instance_id: recycledRune,
+  });
+  assert.equal(recycle.status, 201);
+  const recycled = await recycle.json();
+  assert.equal(recycled.table.seats[0].zones.rune_pool.length, 1);
+  assert.equal(recycled.table.seats[0].zones.rune_deck.length, 3);
+  assert.equal(recycled.table.seats[0].zones.rune_deck.at(-1).hidden, true);
+  const rawRecycled = JSON.parse(db.playgroundTables[0].active_snapshot_json);
+  assert.equal(rawRecycled.seats[0].zones.rune_deck.at(-1).instance_id, recycledRune);
+
+  const pass = await postPlaygroundEvent(env, table.id, "host-session", "turn.pass", {});
+  const passed = await pass.json();
+  assert.equal(passed.table.seats[0].temporary_energy, 0);
+  assert.equal(db.playgroundEvents.at(-3).event_type, "rune.spend");
+  assert.equal(db.playgroundEvents.at(-2).event_type, "rune.recycle");
+});
+
 test("worker allows card movement into the chain zone", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db);

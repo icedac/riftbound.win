@@ -865,6 +865,7 @@ function createSeatSnapshot(seatIndex, user, deck, joinedAt) {
     deck_snapshot: deck.deck_json,
     joined_at: joinedAt,
     points: 0,
+    temporary_energy: 0,
     zones: buildPlaygroundZones(deck.deck_json),
   };
 }
@@ -988,12 +989,20 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
 }
 
 function privateZoneActionError(table, user, eventType, payload = {}) {
-  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "deck.shuffle", "hand.mulligan"]).has(eventType)) return null;
+  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "deck.shuffle", "hand.mulligan", "rune.spend", "rune.recycle"]).has(eventType)) return null;
   const seat = table.seats?.[Number(payload.seat_index || 0)];
   if (!seat || seat.user_id === user.id) return null;
+  if (eventType === "rune.spend" || eventType === "rune.recycle") return { status: 403, message: "Private zone requires owner" };
   const zone = zoneName(
-    new Set(["card.flip", "card.exhaust", "deck.shuffle", "hand.mulligan"]).has(eventType)
-      ? payload.zone || (eventType === "deck.shuffle" ? "main_deck" : eventType === "hand.mulligan" ? "hand" : "battlefield")
+    new Set(["card.flip", "card.exhaust", "deck.shuffle", "hand.mulligan", "rune.spend", "rune.recycle"]).has(eventType)
+      ? payload.zone ||
+          (eventType === "deck.shuffle"
+            ? "main_deck"
+            : eventType === "hand.mulligan"
+              ? "hand"
+              : eventType === "rune.spend" || eventType === "rune.recycle"
+                ? "rune_pool"
+                : "battlefield")
       : payload.from || "hand"
   );
   if (!isPrivateCardZone(zone)) return null;
@@ -1010,6 +1019,8 @@ function activePlaygroundEventTypes() {
     "card.reveal",
     "card.flip",
     "card.exhaust",
+    "rune.spend",
+    "rune.recycle",
     "battlefield.claim",
     "showdown.start",
     "showdown.end",
@@ -1027,6 +1038,8 @@ function turnScopedPlaygroundEventTypes() {
     "card.reveal",
     "card.flip",
     "card.exhaust",
+    "rune.spend",
+    "rune.recycle",
     "battlefield.claim",
     "showdown.start",
     "showdown.end",
@@ -1054,11 +1067,14 @@ function applyPlaygroundEvent(table, event) {
   if (event.type === "card.exhaust") applyCardExhaust(table, event.payload);
   if (event.type === "deck.shuffle") applyDeckShuffle(table, event);
   if (event.type === "hand.mulligan") applyHandMulligan(table, event);
+  if (event.type === "rune.spend") applyRuneSpend(table, event);
+  if (event.type === "rune.recycle") applyRuneRecycle(table, event);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
   if (event.type === "showdown.start") applyShowdownStart(table, event);
   if (event.type === "showdown.end") applyShowdownEnd(table, event);
   if (event.type === "turn.phase") applyTurnPhase(table, event);
   if (event.type === "turn.pass") {
+    clearTemporaryEnergy(table);
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
     table.turn_phase = "main";
@@ -1114,6 +1130,10 @@ function readySeatCards(seat) {
   for (const zone of ["legend_zone", "battlefields", "base", "rune_pool", "battlefield"]) {
     for (const card of seat.zones?.[zone] || []) card.exhausted = false;
   }
+}
+
+function clearTemporaryEnergy(table) {
+  for (const seat of table.seats || []) seat.temporary_energy = 0;
 }
 
 function moveCards(seat, from, to, count) {
@@ -1227,6 +1247,38 @@ function applyCardExhaust(table, payload = {}) {
   if (index < 0) return;
   const currentExhausted = cards[index].exhausted === true;
   cards[index].exhausted = typeof payload.exhausted === "boolean" ? payload.exhausted : !currentExhausted;
+}
+
+function applyRuneSpend(table, event) {
+  const payload = event.payload || {};
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const rune = selectedZoneCard(table, { ...payload, zone: payload.zone || "rune_pool" }, "rune_pool");
+  if (!seat || !rune) return;
+  const wasExhausted = rune.exhausted === true;
+  rune.exhausted = true;
+  rune.spent_at = event.created_at;
+  if (!wasExhausted) seat.temporary_energy = Math.max(0, Number(seat.temporary_energy || 0)) + 1;
+}
+
+function applyRuneRecycle(table, event) {
+  const payload = event.payload || {};
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const zone = zoneName(payload.zone || "rune_pool");
+  const cards = seat?.zones?.[zone];
+  const deck = seat?.zones?.rune_deck;
+  if (!seat || !Array.isArray(cards) || !Array.isArray(deck)) return;
+  const index = selectedCardIndex(cards, payload);
+  if (index < 0) return;
+  const [card] = cards.splice(index, 1);
+  if (!card) return;
+  if (card.exhausted === true) {
+    seat.temporary_energy = Math.max(0, Number(seat.temporary_energy || 0) - 1);
+  }
+  if (typeof card === "object") {
+    delete card.exhausted;
+    delete card.spent_at;
+  }
+  deck.push(card);
 }
 
 function applyBattlefieldClaim(table, event) {
@@ -1402,6 +1454,8 @@ function validPlaygroundEventType(type) {
     "card.reveal",
     "card.flip",
     "card.exhaust",
+    "rune.spend",
+    "rune.recycle",
     "battlefield.claim",
     "showdown.start",
     "showdown.end",
