@@ -1,3 +1,11 @@
 name = "riftbound-win"
 pages_build_output_dir = "public"
 compatibility_date = "2026-06-27"
+
+# BEGIN generated Riftbound backend bindings
+[[d1_databases]]
+binding = "DB"
+database_name = "riftbound-win"
+database_id = "c012cd31-985d-407c-a9bd-34d242cd456e"
+
+# END generated Riftbound backend bindings

@@ -64,7 +64,7 @@ def ensure_r2_bucket():
     raise SystemExit(result.returncode)
 
 
-def write_bindings(database_id):
+def write_bindings(database_id, *, include_r2=True):
     current = CONFIG_PATH.read_text(encoding="utf-8")
     current = re.sub(
         rf"\n?{re.escape(START)}.*?{re.escape(END)}\n?",
@@ -72,6 +72,14 @@ def write_bindings(database_id):
         current,
         flags=re.S,
     ).rstrip()
+    r2_block = ""
+    if include_r2:
+        r2_block = f"""
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "{toml_string(R2_BUCKET)}"
+"""
     block = f"""
 
 {START}
@@ -79,14 +87,14 @@ def write_bindings(database_id):
 binding = "DB"
 database_name = "{toml_string(D1_NAME)}"
 database_id = "{toml_string(database_id)}"
-
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "{toml_string(R2_BUCKET)}"
+{r2_block.rstrip()}
 {END}
 """
     CONFIG_PATH.write_text(f"{current}{block}", encoding="utf-8")
-    print(f"Wrote DB and MEDIA bindings to {CONFIG_PATH}.")
+    if include_r2:
+        print(f"Wrote DB and MEDIA bindings to {CONFIG_PATH}.")
+    else:
+        print(f"Wrote DB binding to {CONFIG_PATH}; MEDIA binding is pending R2 setup.")
 
 
 def upload_oauth_secrets():
@@ -125,17 +133,30 @@ def toml_string(value):
 def main():
     try:
         database_id = d1_database_id()
-        ensure_r2_bucket()
-        write_bindings(database_id)
     except SystemExit as error:
         if os.environ.get("RIFTBOUND_BACKEND_REQUIRED") == "1":
             raise
         print(
             "::warning::Skipping DB/MEDIA binding setup because the Cloudflare token "
-            "does not have the required D1/R2 permissions. Static Pages deploy will continue."
+            "does not have the required D1 permissions. Static Pages deploy will continue."
         )
         if isinstance(error.code, int) and error.code not in (0, None):
             print(f"Backend setup skipped after command exit code {error.code}.")
+    else:
+        include_r2 = True
+        try:
+            ensure_r2_bucket()
+        except SystemExit as error:
+            if os.environ.get("RIFTBOUND_BACKEND_REQUIRED") == "1":
+                raise
+            include_r2 = False
+            print(
+                "::warning::Skipping MEDIA binding setup because R2 is unavailable "
+                "or the Cloudflare token lacks R2 permissions. DB binding will still be written."
+            )
+            if isinstance(error.code, int) and error.code not in (0, None):
+                print(f"R2 setup skipped after command exit code {error.code}.")
+        write_bindings(database_id, include_r2=include_r2)
     upload_oauth_secrets()
 
 
