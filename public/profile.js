@@ -1,4 +1,4 @@
-import { authProviderActions, authReadinessMessage } from "/auth-state.js?v=20260628-authready";
+import { authProviderActions, authProviderDetail, authReadinessMessage } from "/auth-state.js?v=20260628-authsetup1";
 
 const els = {
   status: document.querySelector("#profileStatus"),
@@ -78,19 +78,29 @@ function renderSignedOut(data = null) {
 
 function renderProviders(providers, data = null) {
   els.form.hidden = false;
-  const linked = new Set(providers.map((item) => item.provider));
+  const linked = new Map(providers.map((item) => [item.provider, item]));
   els.providers.replaceChildren(
-    ...authProviderActions(data).map((action) => providerRow(action.label, linked.has(action.provider), action))
+    ...authProviderActions(data).map((action) =>
+      providerRow(action.label, linked.has(action.provider), action, linked.get(action.provider))
+    )
   );
 }
 
-function providerRow(name, linked, action) {
+function providerRow(name, linked, action, provider = null) {
   const row = document.createElement("div");
   row.className = "provider-row";
   const copy = document.createElement("div");
-  copy.append(text("strong", name), text("span", linked ? "Linked" : action.status));
+  copy.append(
+    text("strong", name),
+    text("span", linked ? linkedProviderDetail(provider, action) : authProviderDetail(action))
+  );
   row.append(copy, linked ? text("span", "Ready") : providerLink(action.enabled ? "Link" : "Setup", action));
   return row;
+}
+
+function linkedProviderDetail(provider, action) {
+  const email = provider?.email ? ` · ${provider.email}` : "";
+  return `Linked${email} · ${authProviderDetail(action)}`;
 }
 
 function providerLink(label, action) {
@@ -100,7 +110,7 @@ function providerLink(label, action) {
   if (!action.enabled) {
     link.className = "auth-unconfigured";
     link.setAttribute("aria-disabled", "true");
-    link.title = `${action.label} login setup is incomplete: ${action.missing.join(", ")}`;
+    link.title = authProviderDetail(action);
   }
   return link;
 }

@@ -1990,10 +1990,17 @@ dialog::backdrop {
   color: #fff;
 }
 
+.provider-row > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .provider-row span,
 .profile-status {
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1120px) {

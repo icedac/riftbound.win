@@ -69,6 +69,14 @@ test("cards app recovers browser-restored zero-result filter state", async () =>
   assert.match(source, /addEventListener\("focus"/);
 });
 
+test("cards app disables stale browser scroll restoration on catalog boot", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /disableStaleScrollRestoration\(\)/);
+  assert.match(source, /history\.scrollRestoration = "manual"/);
+  assert.match(source, /scrollTo\(0, 0\)/);
+});
+
 test("foil helper imports are cache-busted wherever foil rendering is used", async () => {
   for (const path of ["../public/app.js", "../public/decks.js", "../public/landing.js"]) {
     const source = await readFile(new URL(path, import.meta.url), "utf8");

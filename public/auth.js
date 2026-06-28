@@ -1,4 +1,4 @@
-import { authProviderActions } from "/auth-state.js?v=20260628-authready";
+import { authProviderActions, authProviderDetail } from "/auth-state.js?v=20260628-authsetup1";
 
 const shell = document.querySelector("[data-auth-shell]");
 
@@ -41,7 +41,7 @@ function providerAction(action) {
   if (!action.enabled) {
     link.className = "auth-unconfigured";
     link.setAttribute("aria-disabled", "true");
-    link.title = `${action.label} login setup is incomplete: ${action.missing.join(", ")}`;
+    link.title = authProviderDetail(action);
   }
   return link;
 }

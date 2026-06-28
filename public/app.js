@@ -9,7 +9,7 @@ import {
   shouldRecoverRenderedCardGrid,
   shouldRepairInitialCardGrid,
 } from "/card-grid-repair.js?v=20260628-cardsvisible1";
-import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardboot3";
+import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-scrollrestore1";
 
 const GRID_RECOVERY_DELAYS = [0, 100, 350, 1000, 2000];
 
@@ -60,6 +60,7 @@ const selects = [
 ];
 
 async function boot() {
+  disableStaleScrollRestoration();
   const response = await fetch("/cards.json", { cache: "no-store" });
   if (!response.ok) throw new Error(`Failed to load cards.json: ${response.status}`);
   state.cards = await response.json();
@@ -69,6 +70,11 @@ async function boot() {
   applyInitialFilters();
   scheduleInitialGridRepair();
   scheduleRestoredStateRecovery();
+}
+
+function disableStaleScrollRestoration() {
+  if ("scrollRestoration" in window.history) window.history.scrollRestoration = "manual";
+  if (!window.location.hash) requestAnimationFrame(() => window.scrollTo(0, 0));
 }
 
 function buildFilters() {

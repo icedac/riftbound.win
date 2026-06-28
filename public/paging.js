@@ -21,7 +21,7 @@ export function nextAutoVisibleCount({
   viewportHeight,
   preloadDistance = 900,
   estimatedPageHeight = 0,
-  maxPages = 8,
+  maxPages = 64,
 }) {
   let next = Math.max(0, current);
   let projectedSentinelTop = sentinelTop;

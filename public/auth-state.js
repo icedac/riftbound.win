@@ -16,8 +16,18 @@ export function authProviderActions(me = {}) {
       enabled,
       status: enabled ? "Ready" : "Needs setup",
       missing,
+      callbackUrl: status.callback_url || "",
     };
   });
+}
+
+export function authProviderDetail(action = {}) {
+  const callback = action.callbackUrl ? ` · callback ${action.callbackUrl}` : "";
+  if (!action.enabled) {
+    const missing = action.missing?.length ? `Missing ${action.missing.join(", ")}` : "Provider setup is incomplete";
+    return `${missing}${callback}`;
+  }
+  return `${action.status || "Ready"}${callback}`;
 }
 
 export function authReadinessMessage(me = {}) {

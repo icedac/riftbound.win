@@ -32,3 +32,17 @@ test("nextAutoVisibleCount keeps revealing pages while the sentinel remains near
     288
   );
 });
+
+test("nextAutoVisibleCount catches up from a deeply restored scroll position", () => {
+  assert.equal(
+    nextAutoVisibleCount({
+      current: 96,
+      total: 1147,
+      pageSize: 96,
+      sentinelTop: -24000,
+      viewportHeight: 900,
+      estimatedPageHeight: 2200,
+    }),
+    1147
+  );
+});

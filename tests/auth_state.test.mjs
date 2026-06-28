@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { authProviderActions, authReadinessMessage } from "../public/auth-state.js";
+import { authProviderActions, authProviderDetail, authReadinessMessage } from "../public/auth-state.js";
 
 test("authProviderActions returns enabled login links only for configured providers", () => {
   const actions = authProviderActions({
@@ -10,6 +10,7 @@ test("authProviderActions returns enabled login links only for configured provid
         google: {
           configured: false,
           start_url: "/api/auth/google/start",
+          callback_url: "https://riftbound.kr/api/auth/google/callback",
           missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
         },
         naver: {
@@ -29,6 +30,7 @@ test("authProviderActions returns enabled login links only for configured provid
       enabled: false,
       status: "Needs setup",
       missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+      callbackUrl: "https://riftbound.kr/api/auth/google/callback",
     },
     {
       provider: "naver",
@@ -37,8 +39,34 @@ test("authProviderActions returns enabled login links only for configured provid
       enabled: true,
       status: "Ready",
       missing: [],
+      callbackUrl: "",
     },
   ]);
+});
+
+test("authProviderDetail explains missing setup and callback URLs", () => {
+  const [google, naver] = authProviderActions({
+    auth: {
+      providers: {
+        google: {
+          configured: false,
+          callback_url: "https://riftbound.kr/api/auth/google/callback",
+          missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+        },
+        naver: {
+          configured: true,
+          callback_url: "https://riftbound.kr/api/auth/naver/callback",
+          missing: [],
+        },
+      },
+    },
+  });
+
+  assert.equal(
+    authProviderDetail(google),
+    "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET · callback https://riftbound.kr/api/auth/google/callback"
+  );
+  assert.equal(authProviderDetail(naver), "Ready · callback https://riftbound.kr/api/auth/naver/callback");
 });
 
 test("authReadinessMessage names missing provider setup", () => {
