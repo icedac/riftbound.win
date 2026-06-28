@@ -128,3 +128,11 @@ test("public page scripts are cache-busted", async () => {
     }
   }
 });
+
+test("public pages expose the frontend FPS sampler", async () => {
+  for (const path of pages) {
+    const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+
+    assert.match(html, /src="\/perf\.js\?v=[^"]+"\s+type="module"/, path);
+  }
+});
