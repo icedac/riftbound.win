@@ -983,6 +983,52 @@ test("worker allows card movement into the chain zone", async () => {
   assert.equal(moved.table.seats[0].zones.hand.length, 3);
 });
 
+test("worker allows owners to shuffle deck piles before game start", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+  const before = JSON.parse(db.playgroundTables[0].active_snapshot_json).seats[0].zones.main_deck.map((card) => card.instance_id);
+
+  const guestShuffle = await postPlaygroundEvent(env, table.id, "guest-session", "deck.shuffle", {
+    seat_index: 0,
+    zone: "main_deck",
+    seed: "fixed-main-seed",
+  });
+  assert.equal(guestShuffle.status, 403);
+
+  const shuffle = await postPlaygroundEvent(env, table.id, "host-session", "deck.shuffle", {
+    seat_index: 0,
+    zone: "main_deck",
+    seed: "fixed-main-seed",
+  });
+
+  assert.equal(shuffle.status, 201);
+  const shuffled = await shuffle.json();
+  assert.equal(shuffled.event.sequence, 1);
+  const after = JSON.parse(db.playgroundTables[0].active_snapshot_json).seats[0].zones.main_deck.map((card) => card.instance_id);
+  assert.notDeepEqual(after, before);
+  assert.deepEqual(after.slice().sort(), before.slice().sort());
+  assert.equal(db.playgroundEvents.at(-1).event_type, "deck.shuffle");
+});
+
 test("worker records turn phase events in snapshots and logs", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db);

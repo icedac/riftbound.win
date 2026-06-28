@@ -978,10 +978,14 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
 }
 
 function privateZoneActionError(table, user, eventType, payload = {}) {
-  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust"]).has(eventType)) return null;
+  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "deck.shuffle"]).has(eventType)) return null;
   const seat = table.seats?.[Number(payload.seat_index || 0)];
   if (!seat || seat.user_id === user.id) return null;
-  const zone = zoneName(new Set(["card.flip", "card.exhaust"]).has(eventType) ? payload.zone || "battlefield" : payload.from || "hand");
+  const zone = zoneName(
+    new Set(["card.flip", "card.exhaust", "deck.shuffle"]).has(eventType)
+      ? payload.zone || (eventType === "deck.shuffle" ? "main_deck" : "battlefield")
+      : payload.from || "hand"
+  );
   if (!isPrivateCardZone(zone)) return null;
   return { status: 403, message: "Private zone requires owner" };
 }
@@ -1037,6 +1041,7 @@ function applyPlaygroundEvent(table, event) {
   if (event.type === "card.reveal") applyCardReveal(table, event.payload);
   if (event.type === "card.flip") applyCardFlip(table, event.payload);
   if (event.type === "card.exhaust") applyCardExhaust(table, event.payload);
+  if (event.type === "deck.shuffle") applyDeckShuffle(table, event);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
   if (event.type === "showdown.start") applyShowdownStart(table, event);
   if (event.type === "showdown.end") applyShowdownEnd(table, event);
@@ -1105,6 +1110,45 @@ function applyCardMove(table, payload = {}) {
       ? seat.zones[from].splice(selectedIndex, 1)
       : seat.zones[from].splice(0, Math.max(1, Math.min(Number(payload.count || 1), seat.zones[from].length)));
   seat.zones[to].push(...moved);
+}
+
+function applyDeckShuffle(table, event) {
+  const seat = table.seats?.[Number(event.payload?.seat_index || 0)];
+  const zone = deckShuffleZone(event.payload?.zone);
+  const cards = seat?.zones?.[zone];
+  if (!Array.isArray(cards) || cards.length < 2) return;
+  const seed = shuffleSeed(event, zone);
+  cards.sort((left, right) => {
+    const leftRank = shuffleRank(seed, left);
+    const rightRank = shuffleRank(seed, right);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return cardInstanceKey(left).localeCompare(cardInstanceKey(right));
+  });
+}
+
+function deckShuffleZone(value) {
+  return zoneName(value) === "rune_deck" ? "rune_deck" : "main_deck";
+}
+
+function shuffleSeed(event, zone) {
+  return String(event.payload?.seed || `${event.id}|${event.sequence}|${event.created_at}|${event.actor_id}|${zone}`);
+}
+
+function shuffleRank(seed, card) {
+  return hashString(`${seed}|${cardInstanceKey(card)}`);
+}
+
+function cardInstanceKey(card = {}) {
+  return String(card.instance_id || card.id || "");
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
 }
 
 function applyCardReveal(table, payload = {}) {
@@ -1307,6 +1351,7 @@ function validPlaygroundEventType(type) {
   return new Set([
     "game.start",
     "card.move",
+    "deck.shuffle",
     "card.reveal",
     "card.flip",
     "card.exhaust",

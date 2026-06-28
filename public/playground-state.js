@@ -265,6 +265,7 @@ function applyEvent(table, event) {
   if (event.type === "card.reveal") applyReveal(table, event.payload);
   if (event.type === "card.flip") applyFlip(table, event.payload);
   if (event.type === "card.exhaust") applyExhaust(table, event.payload);
+  if (event.type === "deck.shuffle") applyDeckShuffle(table, event);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
   if (event.type === "showdown.start") applyShowdownStart(table, event);
   if (event.type === "showdown.end") applyShowdownEnd(table, event);
@@ -453,6 +454,45 @@ function moveCards(seat, from, to, count) {
   seat.zones[to].push(...seat.zones[from].splice(0, Math.max(0, Math.min(count, seat.zones[from].length))));
 }
 
+function applyDeckShuffle(table, event) {
+  const seat = table.seats?.[Number(event.payload?.seat_index || 0)];
+  const zone = deckShuffleZone(event.payload?.zone);
+  const cards = seat?.zones?.[zone];
+  if (!Array.isArray(cards) || cards.length < 2) return;
+  const seed = shuffleSeed(event, zone);
+  cards.sort((left, right) => {
+    const leftRank = shuffleRank(seed, left);
+    const rightRank = shuffleRank(seed, right);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return cardInstanceKey(left).localeCompare(cardInstanceKey(right));
+  });
+}
+
+function deckShuffleZone(value) {
+  return zoneName(value) === "rune_deck" ? "rune_deck" : "main_deck";
+}
+
+function shuffleSeed(event, zone) {
+  return String(event.payload?.seed || `${event.id}|${event.sequence}|${event.created_at}|${event.actor_id}|${zone}`);
+}
+
+function shuffleRank(seed, card) {
+  return hashString(`${seed}|${cardInstanceKey(card)}`);
+}
+
+function cardInstanceKey(card = {}) {
+  return String(card.instance_id || card.id || "");
+}
+
+function hashString(value) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 function applyMove(table, payload = {}) {
   const seat = table.seats[Number(payload.seat_index || 0)];
   const from = zoneName(payload.from);
@@ -542,6 +582,7 @@ function eventSummary(event) {
   if (event.type === "card.move") return `${event.payload.count || 1} card(s): ${event.payload.from} -> ${event.payload.to}`;
   if (event.type === "card.flip") return `Flip selected card in ${event.payload.zone || "battlefield"} ${event.payload.face_up === false ? "face down" : "face up"}`;
   if (event.type === "card.exhaust") return `${event.payload.exhausted === false ? "Ready" : "Exhaust"} selected card in ${event.payload.zone || "battlefield"}`;
+  if (event.type === "deck.shuffle") return `Shuffle ${deckShuffleZone(event.payload?.zone)}`;
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
   if (event.type === "battlefield.claim") return "Battlefield claimed";

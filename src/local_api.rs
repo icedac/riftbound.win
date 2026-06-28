@@ -1427,7 +1427,7 @@ fn private_zone_action_denied(
 ) -> bool {
     if !matches!(
         event_type,
-        "card.move" | "card.reveal" | "card.flip" | "card.exhaust"
+        "card.move" | "card.reveal" | "card.flip" | "card.exhaust" | "deck.shuffle"
     ) {
         return false;
     }
@@ -1445,11 +1445,15 @@ fn private_zone_action_denied(
     if seat.get("user_id").and_then(Value::as_str) == Some(user.id.as_str()) {
         return false;
     }
-    let zone = if matches!(event_type, "card.flip" | "card.exhaust") {
+    let zone = if matches!(event_type, "card.flip" | "card.exhaust" | "deck.shuffle") {
         payload
             .get("zone")
             .and_then(Value::as_str)
-            .unwrap_or("battlefield")
+            .unwrap_or(if event_type == "deck.shuffle" {
+                "main_deck"
+            } else {
+                "battlefield"
+            })
     } else {
         payload
             .get("from")
@@ -1541,6 +1545,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     }
     if event_type == "card.exhaust" {
         apply_card_exhaust(table, &event["payload"]);
+    }
+    if event_type == "deck.shuffle" {
+        apply_deck_shuffle(table, event);
     }
     if event_type == "battlefield.claim" {
         apply_battlefield_claim(table, event);
@@ -1872,6 +1879,82 @@ fn apply_card_move(table: &mut Value, payload: &Value) {
     if let Some(to_zone) = zones.get_mut(&to).and_then(Value::as_array_mut) {
         to_zone.extend(moved);
     }
+}
+
+fn apply_deck_shuffle(table: &mut Value, event: &Value) {
+    let seat_index = event["payload"]
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let zone = deck_shuffle_zone(event["payload"].get("zone").and_then(Value::as_str));
+    let seed = playground_shuffle_seed(event, zone);
+    let Some(cards) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+        .and_then(|seat| seat.get_mut("zones"))
+        .and_then(Value::as_object_mut)
+        .and_then(|zones| zones.get_mut(zone))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    if cards.len() < 2 {
+        return;
+    }
+    cards.sort_by(|left, right| {
+        let left_rank = playground_shuffle_rank(&seed, left);
+        let right_rank = playground_shuffle_rank(&seed, right);
+        left_rank
+            .cmp(&right_rank)
+            .then_with(|| card_instance_key(left).cmp(&card_instance_key(right)))
+    });
+}
+
+fn deck_shuffle_zone(value: Option<&str>) -> &'static str {
+    if zone_name(value.unwrap_or_default()) == "rune_deck" {
+        "rune_deck"
+    } else {
+        "main_deck"
+    }
+}
+
+fn playground_shuffle_seed(event: &Value, zone: &str) -> String {
+    event["payload"]
+        .get("seed")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!(
+                "{}|{}|{}|{}|{}",
+                event["id"].as_str().unwrap_or_default(),
+                event["sequence"].as_i64().unwrap_or_default(),
+                event["created_at"].as_i64().unwrap_or_default(),
+                event["actor_id"].as_str().unwrap_or_default(),
+                zone
+            )
+        })
+}
+
+fn playground_shuffle_rank(seed: &str, card: &Value) -> u32 {
+    playground_hash_string(&format!("{}|{}", seed, card_instance_key(card)))
+}
+
+fn card_instance_key(card: &Value) -> String {
+    card.get("instance_id")
+        .and_then(Value::as_str)
+        .or_else(|| card.get("id").and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn playground_hash_string(value: &str) -> u32 {
+    let mut hash = 2_166_136_261_u32;
+    for byte in value.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    hash
 }
 
 fn apply_card_reveal(table: &mut Value, payload: &Value) {
@@ -2287,6 +2370,7 @@ fn valid_playground_event_type(value: &str) -> bool {
         value,
         "game.start"
             | "card.move"
+            | "deck.shuffle"
             | "card.reveal"
             | "card.flip"
             | "card.exhaust"

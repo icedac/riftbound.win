@@ -158,6 +158,24 @@ test("turn phase events are logged and replayed", () => {
   assert.equal(buildReplayFrames(table).at(-1).table.turn_phase, "main");
 });
 
+test("deck shuffle reorders deck piles while replay stays deterministic", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  const before = table.seats[0].zones.main_deck.map((card) => card.instance_id);
+
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "deck.shuffle",
+    payload: { seat_index: 0, zone: "main_deck", seed: "fixed-main-seed" },
+    now: 1100,
+  });
+
+  const after = table.seats[0].zones.main_deck.map((card) => card.instance_id);
+  assert.notDeepEqual(after, before);
+  assert.deepEqual(after.slice().sort(), before.slice().sort());
+  assert.equal(replayTableEvents(table.events)[0].summary, "Shuffle main_deck");
+  assert.deepEqual(buildReplayFrames(table).at(-1).table.seats[0].zones.main_deck.map((card) => card.instance_id), after);
+});
+
 test("player concession completes a table for the opponent", () => {
   let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
   table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });

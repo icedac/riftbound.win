@@ -29,6 +29,7 @@ Playground implication:
 - Add a future `champion_zone` once the deck editor can mark the chosen champion distinctly from the rest of the Main Deck.
 - Playground API responses now mask Main Deck, Rune Deck, opponent hands, and opponent face-down cards with hidden placeholders while preserving card counts.
 - Stored table snapshots remain complete so owner actions and replay reduction can stay deterministic. User-facing HTTP/WebSocket snapshots are derived views.
+- `deck.shuffle` shuffles a player's `main_deck` or `rune_deck` before or during play while preserving secret visibility and replay determinism.
 
 ## Turn Skeleton
 
@@ -60,6 +61,7 @@ Playground implication:
 
 Playground implication:
 - Current `card.move`, `card.reveal`, and `card.flip` are the right primitive operations for manual play. `chain` is a public zone for manually staging action/reaction cards before resolution.
+- `deck.shuffle` is the current primitive for randomizing Main Deck and Rune Deck order. The event reducer uses a persisted seed so replays rebuild the same pile order.
 - `card.exhaust` is the current primitive for sideways/ready state. It is intentionally manual; later resource payment automation can consume this same state rather than replacing the event log format.
 - `battlefield.claim` plus battlefield-sourced `score.point` is the current primitive for manual hold/conquer scoring. Later battlefield control automation should reduce into these same event shapes.
 - `showdown.start` plus `showdown.end` is the current primitive for contested battlefield resolution. It does not judge damage, action windows, or card text yet; it records the shared battlefield window and the agreed winner so the replay can show why control changed.
