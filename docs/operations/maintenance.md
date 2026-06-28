@@ -19,7 +19,7 @@
 3. Check production cards:
 
    ```bash
-   curl -fsSL https://riftbound.win/cards/ | grep 'Riftbound.kr Cards'
+   python3 scripts/check_frontend_perf.py https://riftbound.win/cards/ --budget-ms 12000 --min-fps 45 | grep 'Riftbound.win Cards'
    curl -fsSL https://riftbound.kr/cards/ | grep 'Riftbound.kr Cards'
    ```
 

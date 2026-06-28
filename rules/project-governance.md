@@ -2,7 +2,7 @@
 
 ## Product Boundary
 
-Riftbound.kr is the public site. The Cloudflare Pages project and repository still use the historical `riftbound-win` name. Use the public brand in UI copy and documentation unless you are referring to infrastructure identifiers.
+Riftbound runs from both `riftbound.win` and `riftbound.kr`. The UI uses the current hostname as the runtime brand: `Riftbound.win` on the win domain and `Riftbound.kr` on the kr domain. The Cloudflare Pages project and repository still use the historical `riftbound-win` infrastructure name.
 
 ## Architecture Map
 
