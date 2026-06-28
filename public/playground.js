@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground16";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260629-rules1";
 import { playCardMovePayload } from "/playground-actions.js?v=20260628-playcard1";
 import { tableLobbySummary } from "/playground-lobby.js?v=20260628-lobby1";
 import {
@@ -947,8 +947,11 @@ function zoneRoleClass(key) {
 }
 
 function labelTurnPhaseValue(value) {
-  const phase = String(value || "main").replace(/-/g, "_").toLowerCase();
-  return ["ready", "score", "channel", "draw", "main", "end"].includes(phase) ? phase : "main";
+  const phase = String(value || "action").replace(/-/g, "_").toLowerCase();
+  if (phase === "ready") return "awaken";
+  if (phase === "score") return "beginning";
+  if (phase === "main") return "action";
+  return ["awaken", "beginning", "channel", "draw", "action", "end"].includes(phase) ? phase : "action";
 }
 
 function labelTurnPhase(value) {

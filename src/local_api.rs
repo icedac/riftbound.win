@@ -1613,7 +1613,7 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         {
             table["turn_player_id"] = json!(first_player);
         }
-        table["turn_phase"] = json!("main");
+        table["turn_phase"] = json!("action");
         table["turn_number"] = json!(numeric_playground_turn_number(table).max(1));
         table["phase_updated_at"] = event["created_at"].clone();
     }
@@ -1668,7 +1668,7 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
             .unwrap_or_default()
             .to_string();
         begin_playground_turn(table, &active_user_id);
-        table["turn_phase"] = json!("main");
+        table["turn_phase"] = json!("action");
         table["turn_number"] = json!((numeric_playground_turn_number(table) + 1).max(1));
         table["phase_updated_at"] = event["created_at"].clone();
     }
@@ -1818,13 +1818,13 @@ fn apply_turn_phase(table: &mut Value, event: &Value) {
 
 fn normalize_turn_phase(value: Option<&str>) -> &'static str {
     match zone_name(value.unwrap_or_default()).as_str() {
-        "ready" => "ready",
-        "score" => "score",
+        "awaken" | "ready" => "awaken",
+        "beginning" | "score" => "beginning",
         "channel" => "channel",
         "draw" => "draw",
-        "main" => "main",
+        "action" | "main" => "action",
         "end" => "end",
-        _ => "main",
+        _ => "action",
     }
 }
 

@@ -14,7 +14,12 @@ const PLAYGROUND_TABLE_CREATE_WINDOW_MS = 10 * 60 * 1000;
 const PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE = "Too many playground tables. Please wait before opening another table.";
 const HIDDEN_CARD_ID = "__hidden__";
 const PLAYGROUND_SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
-const PLAYGROUND_TURN_PHASES = new Set(["ready", "score", "channel", "draw", "main", "end"]);
+const PLAYGROUND_TURN_PHASES = new Set(["awaken", "beginning", "channel", "draw", "action", "end"]);
+const PLAYGROUND_LEGACY_TURN_PHASES = {
+  ready: "awaken",
+  score: "beginning",
+  main: "action",
+};
 const playgroundSockets = new Map();
 
 export default {
@@ -1064,7 +1069,7 @@ function applyPlaygroundEvent(table, event) {
     table.status = "active";
     table.started_at ||= event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats?.[0]?.user_id || "";
-    table.turn_phase = "main";
+    table.turn_phase = "action";
     table.turn_number = Math.max(1, numericTurnNumber(table));
     table.phase_updated_at = event.created_at;
   }
@@ -1084,7 +1089,7 @@ function applyPlaygroundEvent(table, event) {
     clearTemporaryEnergy(table);
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
-    table.turn_phase = "main";
+    table.turn_phase = "action";
     table.turn_number = Math.max(1, numericTurnNumber(table) + 1);
     table.phase_updated_at = event.created_at;
   }
@@ -1343,7 +1348,8 @@ function applyTurnPhase(table, event) {
 
 function normalizeTurnPhase(value) {
   const phase = zoneName(value);
-  return PLAYGROUND_TURN_PHASES.has(phase) ? phase : "main";
+  if (PLAYGROUND_TURN_PHASES.has(phase)) return phase;
+  return PLAYGROUND_LEGACY_TURN_PHASES[phase] || "action";
 }
 
 function numericTurnNumber(table) {

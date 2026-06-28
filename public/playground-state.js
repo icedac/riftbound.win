@@ -1,6 +1,11 @@
 const DEFAULT_NOW = () => Date.now();
 const VICTORY_SCORE = 8;
-const TURN_PHASES = new Set(["ready", "score", "channel", "draw", "main", "end"]);
+const TURN_PHASES = new Set(["awaken", "beginning", "channel", "draw", "action", "end"]);
+const LEGACY_TURN_PHASES = {
+  ready: "awaken",
+  score: "beginning",
+  main: "action",
+};
 
 export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW(), cards = [] } = {}) {
   const tableId = id || randomId("table");
@@ -266,7 +271,7 @@ function applyEvent(table, event) {
     table.status = "active";
     table.started_at = table.started_at || event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats[0]?.user_id || "";
-    table.turn_phase = "main";
+    table.turn_phase = "action";
     table.turn_number = Math.max(1, numericTurnNumber(table));
     table.phase_updated_at = event.created_at;
   }
@@ -286,7 +291,7 @@ function applyEvent(table, event) {
     clearTemporaryEnergy(table);
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
-    table.turn_phase = "main";
+    table.turn_phase = "action";
     table.turn_number = Math.max(1, numericTurnNumber(table) + 1);
     table.phase_updated_at = event.created_at;
   }
@@ -399,7 +404,8 @@ function applyTurnPhase(table, event) {
 
 function normalizeTurnPhase(value) {
   const phase = zoneName(value);
-  return TURN_PHASES.has(phase) ? phase : "main";
+  if (TURN_PHASES.has(phase)) return phase;
+  return LEGACY_TURN_PHASES[phase] || "action";
 }
 
 function numericTurnNumber(table) {

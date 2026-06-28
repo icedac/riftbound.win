@@ -28,6 +28,10 @@ const requiredDocs = [
     patterns: [/Cockatrice/, /lobby/i, /deck selection/i, /Durable Objects/, /WebSocket/],
   },
   {
+    path: "../docs/rules/riftbound-core-rules.md",
+    patterns: [/Core Rules/, /awaken/i, /beginning/i, /channel/i, /draw/i, /action/i, /end/i, /victory/i],
+  },
+  {
     path: "../docs/superpowers/plans/2026-06-28-playground.md",
     patterns: [/Playground Implementation Plan/, /Task 1/, /Task 2/, /cargo test/],
   },

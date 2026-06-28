@@ -1578,7 +1578,7 @@ async fn local_playground_turn_phase_events_persist_in_snapshots() {
     .await;
     assert_eq!(start.status(), StatusCode::CREATED);
     let started = json(start).await;
-    assert_eq!(started["table"]["turn_phase"], "main");
+    assert_eq!(started["table"]["turn_phase"], "action");
     assert_eq!(started["table"]["turn_number"], 1);
 
     let phase = request(
@@ -1587,12 +1587,12 @@ async fn local_playground_turn_phase_events_persist_in_snapshots() {
         &format!("/api/playground/tables/{table_id}/events"),
         Some(&host_cookie),
         Some("application/json"),
-        Body::from(r#"{"type":"turn.phase","payload":{"phase":"score"}}"#),
+        Body::from(r#"{"type":"turn.phase","payload":{"phase":"beginning"}}"#),
     )
     .await;
     assert_eq!(phase.status(), StatusCode::CREATED);
     let phased = json(phase).await;
-    assert_eq!(phased["table"]["turn_phase"], "score");
+    assert_eq!(phased["table"]["turn_phase"], "beginning");
     assert_eq!(
         phased["table"]["phase_updated_at"],
         phased["event"]["created_at"]
@@ -1609,7 +1609,7 @@ async fn local_playground_turn_phase_events_persist_in_snapshots() {
     .await;
     assert_eq!(pass.status(), StatusCode::CREATED);
     let passed = json(pass).await;
-    assert_eq!(passed["table"]["turn_phase"], "main");
+    assert_eq!(passed["table"]["turn_phase"], "action");
     assert_eq!(passed["table"]["turn_number"], 2);
 }
 

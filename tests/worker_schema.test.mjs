@@ -1223,20 +1223,20 @@ test("worker records turn phase events in snapshots and logs", async () => {
   const start = await postPlaygroundEvent(env, table.id, "host-session", "game.start");
   assert.equal(start.status, 201);
   const started = await start.json();
-  assert.equal(started.table.turn_phase, "main");
+  assert.equal(started.table.turn_phase, "action");
   assert.equal(started.table.turn_number, 1);
 
-  const phase = await postPlaygroundEvent(env, table.id, "host-session", "turn.phase", { phase: "score" });
+  const phase = await postPlaygroundEvent(env, table.id, "host-session", "turn.phase", { phase: "beginning" });
   assert.equal(phase.status, 201);
   const phased = await phase.json();
-  assert.equal(phased.table.turn_phase, "score");
+  assert.equal(phased.table.turn_phase, "beginning");
   assert.equal(phased.table.phase_updated_at, phased.event.created_at);
 
   const pass = await postPlaygroundEvent(env, table.id, "host-session", "turn.pass", {});
   assert.equal(pass.status, 201);
   const passed = await pass.json();
   assert.equal(passed.table.turn_player_id, "guest-user");
-  assert.equal(passed.table.turn_phase, "main");
+  assert.equal(passed.table.turn_phase, "action");
   assert.equal(passed.table.turn_number, 2);
   assert.equal(db.playgroundEvents.at(-2).event_type, "turn.phase");
   assert.equal(db.playgroundEvents.at(-1).event_type, "turn.pass");

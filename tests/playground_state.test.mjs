@@ -156,20 +156,33 @@ test("turn phase events are logged and replayed", () => {
   table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
   table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
 
-  assert.equal(table.turn_phase, "main");
+  assert.equal(table.turn_phase, "action");
   assert.equal(table.turn_number, 1);
 
-  table = appendTableEvent(table, { actorId: host.id, type: "turn.phase", payload: { phase: "score" }, now: 1300 });
-  assert.equal(table.turn_phase, "score");
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.phase", payload: { phase: "beginning" }, now: 1300 });
+  assert.equal(table.turn_phase, "beginning");
   assert.equal(table.phase_updated_at, 1300);
 
   table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 1400 });
 
   assert.equal(table.turn_player_id, guest.id);
-  assert.equal(table.turn_phase, "main");
+  assert.equal(table.turn_phase, "action");
   assert.equal(table.turn_number, 2);
-  assert.equal(replayTableEvents(table.events)[1].summary, "Turn phase: score");
-  assert.equal(buildReplayFrames(table).at(-1).table.turn_phase, "main");
+  assert.equal(replayTableEvents(table.events)[1].summary, "Turn phase: beginning");
+  assert.equal(buildReplayFrames(table).at(-1).table.turn_phase, "action");
+});
+
+test("legacy turn phase names are normalized to official Riftbound names", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.phase", payload: { phase: "ready" }, now: 1100 });
+  assert.equal(table.turn_phase, "awaken");
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.phase", payload: { phase: "score" }, now: 1200 });
+  assert.equal(table.turn_phase, "beginning");
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.phase", payload: { phase: "main" }, now: 1300 });
+  assert.equal(table.turn_phase, "action");
 });
 
 test("deck shuffle reorders deck piles while replay stays deterministic", () => {
