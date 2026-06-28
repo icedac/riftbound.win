@@ -25,6 +25,17 @@
 
 4. In a browser, confirm `/cards/` renders cards without Reset.
 
+5. Measure the foil-heavy frontend surfaces:
+
+   ```bash
+   python3 scripts/check_frontend_perf.py https://riftbound.win/ --budget-ms 12000 --min-fps 45
+   python3 scripts/check_frontend_perf.py https://riftbound.win/cards/ --budget-ms 12000 --min-fps 45
+   python3 scripts/check_frontend_perf.py https://riftbound.kr/cards/ --budget-ms 12000 --min-fps 45
+   ```
+
+   `status:["ok"]` means the stable sampled FPS met the threshold. Long startup
+   stalls are reported separately as `stall_frames` and `max_frame_ms`.
+
 ## Card Data Refresh
 
 Run:

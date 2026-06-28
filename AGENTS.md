@@ -20,7 +20,7 @@ cargo test
 python3 -m unittest tests.prepare_cloudflare_pages_backend_test
 ```
 
-For UI changes, also verify the relevant page in a real browser. Cards work is not complete until `/cards/` visibly renders cards and console logs are clean.
+For UI changes, also verify the relevant page in a real browser. Cards work is not complete until `/cards/` visibly renders cards and console logs are clean. Foil or rendering-performance work also needs `python3 scripts/check_frontend_perf.py <url> --budget-ms 12000 --min-fps 45` evidence for the affected page.
 
 ## Development Commands
 

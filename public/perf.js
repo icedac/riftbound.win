@@ -3,6 +3,8 @@ const sample = {
   avgFrameMs: 0,
   p95FrameMs: 0,
   frames: 0,
+  stallFrames: 0,
+  maxFrameMs: 0,
   updatedAt: Date.now(),
 };
 
@@ -21,12 +23,13 @@ function startSampler() {
     if (last) deltas.push(stamp - last);
     last = stamp;
     if (deltas.length >= 120) {
-      const avg = deltas.reduce((total, value) => total + value, 0) / deltas.length;
-      const sorted = [...deltas].sort((a, b) => a - b);
-      sample.avgFrameMs = Math.round(avg);
-      sample.p95FrameMs = Math.round(sorted[Math.floor(sorted.length * 0.95)] || 0);
-      sample.fps = Math.round(1000 / avg);
-      sample.frames += deltas.length;
+      const summary = summarizeFrameDeltas(deltas);
+      sample.avgFrameMs = summary.avgFrameMs;
+      sample.p95FrameMs = summary.p95FrameMs;
+      sample.fps = summary.fps;
+      sample.frames += summary.frames;
+      sample.stallFrames += summary.stallFrames;
+      sample.maxFrameMs = Math.max(sample.maxFrameMs, summary.maxFrameMs);
       sample.updatedAt = Date.now();
       sample.source = typeof window.requestAnimationFrame === "function" ? "requestAnimationFrame" : "setInterval";
       publishSample();
@@ -51,5 +54,26 @@ function publishSample() {
   document.documentElement.dataset.riftboundFps = String(sample.fps);
   document.documentElement.dataset.riftboundAvgFrameMs = String(sample.avgFrameMs);
   document.documentElement.dataset.riftboundP95FrameMs = String(sample.p95FrameMs);
+  document.documentElement.dataset.riftboundFrames = String(sample.frames);
+  document.documentElement.dataset.riftboundStallFrames = String(sample.stallFrames);
+  document.documentElement.dataset.riftboundMaxFrameMs = String(sample.maxFrameMs);
   document.documentElement.dataset.riftboundPerfSource = sample.source || "sampling";
+}
+
+export function summarizeFrameDeltas(deltas, { stallThresholdMs = 250 } = {}) {
+  const frames = deltas.length;
+  const numeric = deltas.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+  const stable = numeric.filter((value) => value <= stallThresholdMs);
+  const measured = stable.length > 0 ? stable : numeric;
+  const sorted = [...measured].sort((a, b) => a - b);
+  const avg = measured.reduce((total, value) => total + value, 0) / Math.max(1, measured.length);
+
+  return {
+    fps: avg > 0 ? Math.round(1000 / avg) : 0,
+    avgFrameMs: Math.round(avg || 0),
+    p95FrameMs: Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] || 0),
+    frames,
+    stallFrames: numeric.length - stable.length,
+    maxFrameMs: Math.round(Math.max(0, ...numeric)),
+  };
 }
