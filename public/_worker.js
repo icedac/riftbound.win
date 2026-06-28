@@ -43,11 +43,12 @@ async function handleApi(request, env, url) {
 }
 
 async function meResponse(request, env) {
-  if (!(await ensureSchema(env))) return json({ user: null, providers: [], configured: false });
+  const auth = authStatus(request, env);
+  if (!(await ensureSchema(env))) return json({ user: null, providers: [], configured: false, auth });
   const session = await currentSession(request, env);
-  if (!session) return json({ user: null, providers: [], configured: true });
+  if (!session) return json({ user: null, providers: [], configured: true, auth });
   const providers = await providerRows(env, session.user.id);
-  return json({ user: publicUser(session.user), providers, configured: true });
+  return json({ user: publicUser(session.user), providers, configured: true, auth });
 }
 
 async function updateProfile(request, env) {
@@ -296,6 +297,34 @@ function providerConfig(env, provider) {
       response_type: "code",
       state,
     }),
+  };
+}
+
+function authStatus(request, env) {
+  const origin = new URL(request.url).origin;
+  return {
+    providers: {
+      google: providerStatus(origin, "google", {
+        GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
+      }),
+      naver: providerStatus(origin, "naver", {
+        NAVER_CLIENT_ID: env.NAVER_CLIENT_ID,
+        NAVER_CLIENT_SECRET: env.NAVER_CLIENT_SECRET,
+      }),
+    },
+  };
+}
+
+function providerStatus(origin, provider, secrets) {
+  const missing = Object.entries(secrets)
+    .filter(([, value]) => !value)
+    .map(([key]) => key);
+  return {
+    configured: missing.length === 0,
+    start_url: `/api/auth/${provider}/start`,
+    callback_url: `${origin}/api/auth/${provider}/callback`,
+    missing,
   };
 }
 

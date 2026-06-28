@@ -107,16 +107,18 @@ pub fn build_local_api_router(options: LocalApiOptions) -> Result<Router> {
 }
 
 async fn me_response(State(state): State<Arc<LocalApiState>>, headers: HeaderMap) -> Response {
+    let auth = local_auth_status();
     json_response(match current_user(&state, &headers) {
         Ok(Some(user)) => {
             let providers = providers_for_user(&state, &user.id).unwrap_or_default();
             json!({
                 "user": public_user(user),
                 "providers": providers,
-                "configured": true
+                "configured": true,
+                "auth": auth
             })
         }
-        Ok(None) => json!({ "user": null, "providers": [], "configured": true }),
+        Ok(None) => json!({ "user": null, "providers": [], "configured": true, "auth": auth }),
         Err(error) => json!({ "error": error.to_string() }),
     })
 }
@@ -528,6 +530,25 @@ fn providers_for_user(state: &LocalApiState, user_id: &str) -> Result<Vec<Provid
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+fn local_auth_status() -> Value {
+    json!({
+        "providers": {
+            "google": {
+                "configured": true,
+                "start_url": "/api/auth/google/start",
+                "callback_url": "/api/auth/google/callback",
+                "missing": [],
+            },
+            "naver": {
+                "configured": true,
+                "start_url": "/api/auth/naver/start",
+                "callback_url": "/api/auth/naver/callback",
+                "missing": [],
+            },
+        }
     })
 }
 

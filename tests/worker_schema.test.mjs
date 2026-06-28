@@ -46,9 +46,52 @@ test("worker initializes D1 schema with single prepared statements", async () =>
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { user: null, providers: [], configured: true });
+  assert.deepEqual(await response.json(), {
+    user: null,
+    providers: [],
+    configured: true,
+    auth: {
+      providers: {
+        google: {
+          configured: false,
+          start_url: "/api/auth/google/start",
+          callback_url: "https://riftbound.kr/api/auth/google/callback",
+          missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+        },
+        naver: {
+          configured: false,
+          start_url: "/api/auth/naver/start",
+          callback_url: "https://riftbound.kr/api/auth/naver/callback",
+          missing: ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
+        },
+      },
+    },
+  });
   assert.ok(db.statements.some((sql) => sql.startsWith("CREATE TABLE IF NOT EXISTS users")));
   assert.ok(db.statements.every((sql) => !sql.includes(";\n")));
+});
+
+test("worker reports configured OAuth providers when secrets are present", async () => {
+  const db = new FakeD1Database();
+  const request = new Request("https://riftbound.kr/api/me");
+
+  const response = await worker.fetch(request, {
+    DB: db,
+    GOOGLE_CLIENT_ID: "google-id",
+    GOOGLE_CLIENT_SECRET: "google-secret",
+    NAVER_CLIENT_ID: "naver-id",
+    NAVER_CLIENT_SECRET: "naver-secret",
+    ASSETS: { fetch: () => new Response("asset") },
+  });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.auth.providers.google.configured, true);
+  assert.equal(body.auth.providers.naver.configured, true);
+  assert.deepEqual(body.auth.providers.google.missing, []);
+  assert.deepEqual(body.auth.providers.naver.missing, []);
+  assert.equal(body.auth.providers.google.callback_url, "https://riftbound.kr/api/auth/google/callback");
+  assert.equal(body.auth.providers.naver.callback_url, "https://riftbound.kr/api/auth/naver/callback");
 });
 
 class BoundStatement {
