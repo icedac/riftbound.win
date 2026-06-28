@@ -655,7 +655,7 @@ label {
 }
 
 .foil-compact.is-foil-active .foil-wash {
-  opacity: calc(0.08 + (var(--card-opacity) * 0.18));
+  opacity: calc(0.18 + (var(--card-opacity) * 0.26));
 }
 
 .foil-layer {
@@ -677,19 +677,20 @@ label {
 
 .foil-wash {
   z-index: 2;
-  opacity: calc(0.035 + (var(--card-opacity) * 0.1));
+  opacity: calc(0.075 + (var(--card-opacity) * 0.14));
   background-image:
     radial-gradient(
       farthest-corner circle at var(--pointer-x) var(--pointer-y),
-      rgb(255 255 255 / 28%) 0%,
-      rgb(255 255 255 / 8%) 24%,
+      rgb(255 255 255 / 40%) 0%,
+      rgb(255 255 255 / 12%) 24%,
       transparent 56%
     ),
-    radial-gradient(circle at 18% 20%, rgb(94 222 255 / 20%) 0%, transparent 48%),
-    radial-gradient(circle at 86% 30%, rgb(255 128 232 / 18%) 0%, transparent 46%),
-    radial-gradient(circle at 46% 88%, rgb(255 220 110 / 16%) 0%, transparent 54%);
+    radial-gradient(circle at 18% 20%, rgb(94 222 255 / 32%) 0%, transparent 48%),
+    radial-gradient(circle at 86% 30%, rgb(255 128 232 / 30%) 0%, transparent 46%),
+    radial-gradient(circle at 46% 88%, rgb(255 220 110 / 26%) 0%, transparent 54%);
   background-size: cover;
   background-position: center;
+  background-blend-mode: screen;
   mix-blend-mode: screen;
 }
 

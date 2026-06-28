@@ -12,6 +12,16 @@ test("compact foil wash uses soft radial light instead of stripe gradients", () 
   assert.doesNotMatch(block, /conic-gradient/);
 });
 
+test("compact foil wash is visible without returning to harsh stripe patterns", () => {
+  const block = cssBlock(".foil-wash");
+  const activeBlock = cssBlock(".foil-compact.is-foil-active .foil-wash");
+
+  assert.match(block, /opacity:\s*calc\(0\.0[6-9]/);
+  assert.match(activeBlock, /opacity:\s*calc\(0\.1[2-9]/);
+  assert.doesNotMatch(block, /(?:repeating-)?linear-gradient/);
+  assert.doesNotMatch(block, /conic-gradient/);
+});
+
 test("foil visual layers avoid banded gradient families", () => {
   for (const selector of [".foil-wash", ".foil-spectrum", ".foil-glare"]) {
     const block = cssBlock(selector);

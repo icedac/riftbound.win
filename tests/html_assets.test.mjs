@@ -77,6 +77,14 @@ test("cards app disables stale browser scroll restoration on catalog boot", asyn
   assert.match(source, /scrollTo\(0, 0\)/);
 });
 
+test("cards app eager-loads first visible card images", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /EAGER_IMAGE_COUNT/);
+  assert.match(source, /image\.loading = index < EAGER_IMAGE_COUNT \? "eager" : "lazy"/);
+  assert.match(source, /image\.fetchPriority = index < EAGER_IMAGE_COUNT \? "high" : "auto"/);
+});
+
 test("foil helper imports are cache-busted wherever foil rendering is used", async () => {
   for (const path of ["../public/app.js", "../public/decks.js", "../public/landing.js"]) {
     const source = await readFile(new URL(path, import.meta.url), "utf8");

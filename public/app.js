@@ -14,6 +14,7 @@ import {
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-scrollrestore1";
 
 const GRID_RECOVERY_DELAYS = [0, 100, 350, 1000, 2000];
+const EAGER_IMAGE_COUNT = 18;
 
 const state = {
   cards: [],
@@ -155,8 +156,8 @@ function render() {
   }
 
   const fragment = document.createDocumentFragment();
-  for (const card of visibleCards) {
-    fragment.append(cardNode(card));
+  for (const [index, card] of visibleCards.entries()) {
+    fragment.append(cardNode(card, index));
   }
   els.grid.replaceChildren(fragment);
   updateSentinel(visibleCards.length, state.filtered.length);
@@ -300,7 +301,7 @@ function estimatePageHeight(pageSize) {
   return Math.ceil(pageSize / Math.max(1, columns)) * (cardHeight + rowGap);
 }
 
-function cardNode(card) {
+function cardNode(card, index = 0) {
   const article = document.createElement("article");
   article.className = [
     "card",
@@ -328,7 +329,8 @@ function cardNode(card) {
       .join(" ")
   );
   const image = document.createElement("img");
-  image.loading = "lazy";
+  image.loading = index < EAGER_IMAGE_COUNT ? "eager" : "lazy";
+  image.fetchPriority = index < EAGER_IMAGE_COUNT ? "high" : "auto";
   image.decoding = "async";
   image.src = card.local_image || card.image_url || "";
   image.alt = card.name;
