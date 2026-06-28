@@ -34,6 +34,24 @@ class PrepareCloudflarePagesBackendTest(unittest.TestCase):
             self.assertIn('database_id = "d1-uuid"', config)
             self.assertNotIn("[[r2_buckets]]", config)
 
+    def test_reads_existing_d1_database_id_from_config(self):
+        module = load_module()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "wrangler.toml"
+            config_path.write_text(
+                'name = "riftbound-win"\n'
+                f"{module.START}\n"
+                "[[d1_databases]]\n"
+                'binding = "DB"\n'
+                'database_name = "riftbound-win"\n'
+                'database_id = "existing-db-id"\n'
+                f"{module.END}\n",
+                encoding="utf-8",
+            )
+            module.CONFIG_PATH = config_path
+
+            self.assertEqual(module.configured_d1_database_id(), "existing-db-id")
+
 
 if __name__ == "__main__":
     unittest.main()

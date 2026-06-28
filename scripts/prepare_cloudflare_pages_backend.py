@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 
@@ -47,6 +48,19 @@ def find_d1_database():
     for database in databases:
         if database.get("name") == D1_NAME:
             return database.get("uuid") or database.get("id")
+    return None
+
+
+def configured_d1_database_id():
+    if not CONFIG_PATH.exists():
+        return None
+    try:
+        config = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError:
+        return None
+    for database in config.get("d1_databases", []):
+        if database.get("binding") == "DB" and database.get("database_name") == D1_NAME:
+            return database.get("database_id")
     return None
 
 
@@ -131,18 +145,24 @@ def toml_string(value):
 
 
 def main():
+    database_id = None
     try:
         database_id = d1_database_id()
     except SystemExit as error:
-        if os.environ.get("RIFTBOUND_BACKEND_REQUIRED") == "1":
+        database_id = configured_d1_database_id()
+        if database_id:
+            print(f"Using committed D1 database binding for {D1_NAME}.")
+        elif os.environ.get("RIFTBOUND_BACKEND_REQUIRED") == "1":
             raise
-        print(
-            "::warning::Skipping DB/MEDIA binding setup because the Cloudflare token "
-            "does not have the required D1 permissions. Static Pages deploy will continue."
-        )
-        if isinstance(error.code, int) and error.code not in (0, None):
-            print(f"Backend setup skipped after command exit code {error.code}.")
-    else:
+        else:
+            print(
+                "::warning::Skipping DB/MEDIA binding setup because the Cloudflare token "
+                "does not have the required D1 permissions and no committed DB binding exists. "
+                "Static Pages deploy will continue."
+            )
+            if isinstance(error.code, int) and error.code not in (0, None):
+                print(f"Backend setup skipped after command exit code {error.code}.")
+    if database_id:
         include_r2 = True
         try:
             ensure_r2_bucket()
