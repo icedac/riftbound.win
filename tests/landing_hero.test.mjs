@@ -22,6 +22,14 @@ test("featured Ahri promo is styled larger than the supporting hero cards", () =
   assert.match(supportBlock, /max-width:\s*190px/);
 });
 
+test("home headline is restrained so the featured Ahri card stays dominant", () => {
+  const copyBlock = cssBlock(".hero-copy");
+  const headlineBlock = cssBlock(".hero-copy h1");
+
+  assert.match(copyBlock, /max-width:\s*500px/);
+  assert.match(headlineBlock, /clamp\(44px,\s*6vw,\s*82px\)/);
+});
+
 function cssBlock(selector) {
   const match = new RegExp(`(^|\\n)${escapeRegExp(selector)} \\{`).exec(css);
   const start = match?.index === undefined ? -1 : match.index + match[1].length;

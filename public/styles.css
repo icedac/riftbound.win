@@ -229,12 +229,12 @@ textarea::placeholder {
   display: grid;
   align-content: center;
   gap: 22px;
-  max-width: 560px;
+  max-width: 500px;
 }
 
 .hero-copy h1 {
   color: #fff;
-  font-size: clamp(54px, 8vw, 124px);
+  font-size: clamp(44px, 6vw, 82px);
   line-height: 0.88;
 }
 

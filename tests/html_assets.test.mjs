@@ -19,12 +19,20 @@ test("HTML pages load cache-busted stylesheet URLs", async () => {
   }
 });
 
-test("public pages use Riftbound.kr as the site title and brand", async () => {
+test("public pages default to Riftbound.win and expose runtime brand targets", async () => {
   for (const path of pages) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-    assert.match(html, /Riftbound\.kr/, path);
-    assert.doesNotMatch(html, /Riftbound\.win/, path);
+    assert.match(html, /Riftbound\.win/, path);
+    assert.match(html, /data-brand/, path);
+  }
+});
+
+test("public pages load the runtime brand module", async () => {
+  for (const path of pages) {
+    const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+
+    assert.match(html, /src="\/brand\.js\?v=[^"]+"\s+type="module"/, path);
   }
 });
 
