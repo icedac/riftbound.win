@@ -27,3 +27,10 @@ test("public pages use Riftbound.kr as the site title and brand", async () => {
     assert.doesNotMatch(html, /Riftbound\.win/, path);
   }
 });
+
+test("cards page cache-busts its application script", async () => {
+  const html = await readFile(new URL("../public/cards/index.html", import.meta.url), "utf8");
+
+  assert.match(html, /src="\/app\.js\?v=[^"]+"/);
+  assert.doesNotMatch(html, /src="\/app\.js"/);
+});
