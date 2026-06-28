@@ -6,6 +6,7 @@ test("playground Durable Object worker exports the table actor protocol", async 
   const source = await readFile(new URL("../workers/playground-table.js", import.meta.url), "utf8");
 
   assert.match(source, /export class PlaygroundTable/);
+  assert.match(source, /export default/);
   assert.match(source, /WebSocketPair/);
   assert.match(source, /table\.snapshot/);
   assert.match(source, /table\.event/);

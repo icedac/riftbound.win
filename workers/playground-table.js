@@ -1,6 +1,12 @@
 const SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
 const BROADCAST_TYPES = new Set(["table.snapshot", "table.event", "presence.update"]);
 
+export default {
+  async fetch() {
+    return json({ ok: true, service: "riftbound-playground-table" });
+  },
+};
+
 export class PlaygroundTable {
   constructor(state, env) {
     this.state = state;
