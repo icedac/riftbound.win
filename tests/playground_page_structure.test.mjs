@@ -27,6 +27,10 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="playgroundTable"',
     'id="tableZones"',
     'id="revealCard"',
+    'id="selectedCardStatus"',
+    'id="moveToZone"',
+    'id="moveSelectedCard"',
+    'id="flipSelectedCard"',
     'id="eventLog"',
     'id="chatLog"',
     'id="voicePanel"',
@@ -46,6 +50,9 @@ test("playground client uses shared server table APIs instead of browser-local t
 
   assert.match(js, /\/api\/playground\/tables/);
   assert.match(js, /\/events/);
+  assert.match(js, /selectedCard/);
+  assert.match(js, /instance_id/);
+  assert.match(js, /card\.flip/);
   assert.match(js, /WebSocket/);
   assert.match(js, /RTCPeerConnection/);
   assert.doesNotMatch(js, /localStorage/);

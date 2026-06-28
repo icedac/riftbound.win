@@ -649,6 +649,34 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(moved.event.sequence, 1);
   assert.equal(moved.table.seats[0].zones.hand.length, 2);
   assert.equal(moved.table.seats[0].zones.main_deck.length, 3);
+  const selectedInstance = moved.table.seats[0].zones.hand[1].instance_id;
+
+  const moveSelected = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "card.move", payload: { seat_index: 0, from: "hand", to: "battlefield", instance_id: selectedInstance } }),
+    }),
+    env
+  );
+  assert.equal(moveSelected.status, 201);
+  const selectedMoved = await moveSelected.json();
+  assert.equal(selectedMoved.event.sequence, 2);
+  assert.equal(selectedMoved.table.seats[0].zones.battlefield[0].instance_id, selectedInstance);
+  assert.equal(selectedMoved.table.seats[0].zones.hand.length, 1);
+
+  const flipSelected = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "card.flip", payload: { seat_index: 0, zone: "battlefield", instance_id: selectedInstance, face_up: false } }),
+    }),
+    env
+  );
+  assert.equal(flipSelected.status, 201);
+  const flipped = await flipSelected.json();
+  assert.equal(flipped.event.sequence, 3);
+  assert.equal(flipped.table.seats[0].zones.battlefield[0].face_up, false);
 
   const forged = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
@@ -667,5 +695,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
     env
   );
   assert.equal(events.status, 200);
-  assert.equal((await events.json()).events.length, 1);
+  const eventList = await events.json();
+  assert.equal(eventList.events.length, 3);
+  assert.equal(eventList.events[2].type, "card.flip");
 });

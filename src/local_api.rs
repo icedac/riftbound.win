@@ -1245,6 +1245,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     if event_type == "card.reveal" {
         apply_card_reveal(table, &event["payload"]);
     }
+    if event_type == "card.flip" {
+        apply_card_flip(table, &event["payload"]);
+    }
     if event_type == "turn.pass" {
         if let Some(to_user_id) = event["payload"].get("to_user_id").and_then(Value::as_str) {
             table["turn_player_id"] = json!(to_user_id);
@@ -1330,8 +1333,12 @@ fn apply_card_move(table: &mut Value, payload: &Value) {
         let Some(from_zone) = zones.get_mut(&from).and_then(Value::as_array_mut) else {
             return;
         };
-        let drain_count = count.min(from_zone.len());
-        from_zone.drain(0..drain_count).collect::<Vec<_>>()
+        if let Some(index) = selected_card_index(from_zone, payload) {
+            vec![from_zone.remove(index)]
+        } else {
+            let drain_count = count.min(from_zone.len());
+            from_zone.drain(0..drain_count).collect::<Vec<_>>()
+        }
     };
     if let Some(to_zone) = zones.get_mut(&to).and_then(Value::as_array_mut) {
         to_zone.extend(moved);
@@ -1365,11 +1372,14 @@ fn apply_card_reveal(table: &mut Value, payload: &Value) {
     if from_zone.is_empty() {
         return;
     }
-    let index = payload
-        .get("card_id")
-        .and_then(Value::as_str)
-        .and_then(|card_id| from_zone.iter().position(|card| card["id"] == card_id))
-        .unwrap_or(0);
+    let index = if has_selected_card(payload) {
+        selected_card_index(from_zone, payload)
+    } else {
+        Some(0)
+    };
+    let Some(index) = index else {
+        return;
+    };
     let mut card = from_zone.remove(index);
     if let Some(card_object) = card.as_object_mut() {
         card_object.insert("revealed_by".to_string(), payload["revealed_by"].clone());
@@ -1377,6 +1387,60 @@ fn apply_card_reveal(table: &mut Value, payload: &Value) {
     if let Some(revealed) = zones.get_mut("revealed").and_then(Value::as_array_mut) {
         revealed.push(card);
     }
+}
+
+fn apply_card_flip(table: &mut Value, payload: &Value) {
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let zone = zone_name(
+        payload
+            .get("zone")
+            .and_then(Value::as_str)
+            .unwrap_or("battlefield"),
+    );
+    let Some(zone_cards) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+        .and_then(|seat| seat.get_mut("zones"))
+        .and_then(Value::as_object_mut)
+        .and_then(|zones| zones.get_mut(&zone))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let Some(index) = selected_card_index(zone_cards, payload) else {
+        return;
+    };
+    let current_face_up = zone_cards[index]
+        .get("face_up")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let next_face_up = payload
+        .get("face_up")
+        .and_then(Value::as_bool)
+        .unwrap_or(!current_face_up);
+    if let Some(card) = zone_cards[index].as_object_mut() {
+        card.insert("face_up".to_string(), json!(next_face_up));
+    }
+}
+
+fn selected_card_index(cards: &[Value], payload: &Value) -> Option<usize> {
+    if let Some(instance_id) = payload.get("instance_id").and_then(Value::as_str) {
+        return cards
+            .iter()
+            .position(|card| card["instance_id"] == instance_id);
+    }
+    if let Some(card_id) = payload.get("card_id").and_then(Value::as_str) {
+        return cards.iter().position(|card| card["id"] == card_id);
+    }
+    None
+}
+
+fn has_selected_card(payload: &Value) -> bool {
+    payload.get("instance_id").is_some() || payload.get("card_id").is_some()
 }
 
 fn apply_result_proposal(table: &mut Value, event: &Value) {
@@ -1434,6 +1498,7 @@ fn valid_playground_event_type(value: &str) -> bool {
         "game.start"
             | "card.move"
             | "card.reveal"
+            | "card.flip"
             | "turn.pass"
             | "chat.message"
             | "voice.presence"

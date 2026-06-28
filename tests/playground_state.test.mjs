@@ -73,3 +73,31 @@ test("joined tables append ordered events, preserve chat and voice state, and re
     ]
   );
 });
+
+test("card events can move a selected instance and flip it in place", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 }, now: 1100 });
+
+  const selected = table.seats[0].zones.hand[1].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "card.move",
+    payload: { seat_index: 0, from: "hand", to: "battlefield", instance_id: selected },
+    now: 1200,
+  });
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "card.flip",
+    payload: { seat_index: 0, zone: "battlefield", instance_id: selected, face_up: false },
+    now: 1300,
+  });
+
+  assert.equal(table.seats[0].zones.battlefield.length, 1);
+  assert.equal(table.seats[0].zones.battlefield[0].instance_id, selected);
+  assert.equal(table.seats[0].zones.battlefield[0].face_up, false);
+  assert.equal(table.seats[0].zones.hand.length, 1);
+  assert.notEqual(table.seats[0].zones.hand[0].instance_id, selected);
+
+  const replay = replayTableEvents(table.events);
+  assert.equal(replay[2].summary, "Flip selected card in battlefield face down");
+});

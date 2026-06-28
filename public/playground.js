@@ -1,4 +1,4 @@
-import { replayTableEvents } from "/playground-state.js?v=20260628-playground2";
+import { replayTableEvents } from "/playground-state.js?v=20260628-playground4";
 import {
   canUseRealtimeTransport,
   createSignalEnvelope,
@@ -18,6 +18,7 @@ const state = {
   savedDecks: [],
   tables: [],
   selectedTableId: "",
+  selectedCard: null,
   micStream: null,
   pollTimer: 0,
   realtimeSocket: null,
@@ -50,6 +51,10 @@ const els = {
   drawRune: document.querySelector("#drawRune"),
   revealCard: document.querySelector("#revealCard"),
   moveBattlefield: document.querySelector("#moveBattlefield"),
+  selectedCardStatus: document.querySelector("#selectedCardStatus"),
+  moveToZone: document.querySelector("#moveToZone"),
+  moveSelectedCard: document.querySelector("#moveSelectedCard"),
+  flipSelectedCard: document.querySelector("#flipSelectedCard"),
   passTurn: document.querySelector("#passTurn"),
 };
 
@@ -73,14 +78,28 @@ function bindEvents() {
     const button = event.target.closest("[data-table-id]");
     if (!button) return;
     state.selectedTableId = button.dataset.tableId;
+    state.selectedCard = null;
     render();
     syncRealtime();
+  });
+  els.tableZones.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-card-instance-id]");
+    if (!button) return;
+    state.selectedCard = {
+      seatIndex: Number(button.dataset.seatIndex || 0),
+      zone: button.dataset.zone || "",
+      instanceId: button.dataset.cardInstanceId || "",
+      cardId: button.dataset.cardId || "",
+    };
+    render();
   });
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
   els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 4 }));
   els.drawRune.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "rune_deck", to: "revealed", count: 1 }));
-  els.revealCard.addEventListener("click", () => appendAction("card.reveal", { seat_index: currentSeatIndex(), from: "hand", revealed_by: currentUserId() }));
-  els.moveBattlefield.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 }));
+  els.revealCard.addEventListener("click", revealSelectedCard);
+  els.moveBattlefield.addEventListener("click", () => (selectedCardRecord() ? moveSelectedCardTo("battlefield") : appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 })));
+  els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
+  els.flipSelectedCard.addEventListener("click", flipSelectedCard);
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
   els.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -156,6 +175,45 @@ async function appendAction(type, payload) {
   } catch (error) {
     reportError(error);
   }
+}
+
+async function revealSelectedCard() {
+  const selected = selectedCardRecord();
+  if (!selected) {
+    await appendAction("card.reveal", { seat_index: currentSeatIndex(), from: "hand", revealed_by: currentUserId() });
+    return;
+  }
+  await appendAction("card.reveal", {
+    seat_index: selected.seatIndex,
+    from: selected.zone,
+    instance_id: selected.instanceId,
+    revealed_by: currentUserId(),
+  });
+  state.selectedCard = null;
+}
+
+async function moveSelectedCardTo(zone) {
+  const selected = selectedCardRecord();
+  if (!selected || !zone) return;
+  await appendAction("card.move", {
+    seat_index: selected.seatIndex,
+    from: selected.zone,
+    to: zone,
+    instance_id: selected.instanceId,
+  });
+  state.selectedCard = { ...state.selectedCard, zone };
+  render();
+}
+
+async function flipSelectedCard() {
+  const selected = selectedCardRecord();
+  if (!selected) return;
+  await appendAction("card.flip", {
+    seat_index: selected.seatIndex,
+    zone: selected.zone,
+    instance_id: selected.instanceId,
+    face_up: selected.card.face_up === false,
+  });
 }
 
 async function toggleVoice() {
@@ -384,16 +442,22 @@ function renderTable() {
   for (const control of [els.startGame, els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.passTurn, els.toggleVoice, els.submitResult]) {
     control.disabled = controlsDisabled;
   }
+  for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard]) {
+    control.disabled = controlsDisabled || !selectedCardRecord();
+  }
   if (!table) {
+    state.selectedCard = null;
     els.tableTitle.textContent = "No table selected";
     els.tableZones.replaceChildren(empty("Open or select a table."));
     els.eventLog.replaceChildren();
     els.chatLog.replaceChildren();
+    renderSelectedCard();
     els.voiceStatus.textContent = "Mic idle";
     return;
   }
   els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)}`;
   els.tableZones.replaceChildren(...(table.seats || []).map(seatZones));
+  renderSelectedCard();
   els.eventLog.replaceChildren(...(table.events || []).slice().reverse().map(eventNode));
   els.chatLog.replaceChildren(...(table.chat || []).map((chat) => text("p", `${playerName(table, chat.user_id)}: ${chat.text}`)));
   const voice = table.voice?.[currentUserId()];
@@ -413,7 +477,7 @@ function seatZones(seat) {
     zone.append(text("strong", labelZone(key)), text("span", `${seat.zones?.[key]?.length || 0}`));
     const preview = document.createElement("div");
     preview.className = "zone-preview";
-    for (const card of (seat.zones?.[key] || []).slice(-4)) preview.append(cardChip(card.id));
+    for (const card of (seat.zones?.[key] || []).slice(-6)) preview.append(cardChip(card, seat, key));
     zone.append(preview);
     zones.append(zone);
   }
@@ -492,6 +556,7 @@ function reportError(error) {
 
 function eventSummary(event) {
   if (event.type === "card.move") return `${event.payload?.count || 1} card(s): ${event.payload?.from} -> ${event.payload?.to}`;
+  if (event.type === "card.flip") return `flip ${event.payload?.zone || "battlefield"}`;
   if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
@@ -509,12 +574,51 @@ function labelZone(key) {
   return key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function cardChip(id) {
-  const card = state.cards.find((item) => item.id === id);
-  const node = document.createElement("span");
-  node.className = "card-chip";
-  node.textContent = card?.name || id;
+function selectedCardRecord() {
+  const selected = state.selectedCard;
+  const table = currentTable();
+  if (!selected || !table) return null;
+  const seat = table.seats?.[selected.seatIndex];
+  const cards = seat?.zones?.[selected.zone];
+  const card = cards?.find((item) => item.instance_id === selected.instanceId);
+  if (!seat || !card) return null;
+  return { ...selected, seat, card };
+}
+
+function renderSelectedCard() {
+  const selected = selectedCardRecord();
+  if (!selected) {
+    state.selectedCard = null;
+    els.selectedCardStatus.textContent = "No card selected";
+    return;
+  }
+  els.selectedCardStatus.textContent = `${playerName(currentTable(), selected.seat.user_id)} · ${labelZone(selected.zone)} · ${cardLabel(selected.card)}`;
+}
+
+function cardChip(card, seat, zone) {
+  const node = document.createElement("button");
+  node.type = "button";
+  const selected = state.selectedCard;
+  node.className = [
+    "card-chip",
+    card.face_up === false ? "face-down" : "",
+    selected?.instanceId === card.instance_id ? "selected" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  node.dataset.seatIndex = seat.seat_index;
+  node.dataset.zone = zone;
+  node.dataset.cardInstanceId = card.instance_id;
+  node.dataset.cardId = card.id;
+  node.textContent = cardLabel(card);
+  node.title = cardLabel(card);
   return node;
+}
+
+function cardLabel(card) {
+  if (card?.face_up === false) return "Face down";
+  const catalog = state.cards.find((item) => item.id === card?.id);
+  return catalog?.name || card?.id || "Card";
 }
 
 function option(value, label) {

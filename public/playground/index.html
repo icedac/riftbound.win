@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Riftbound.kr Playground</title>
-    <link rel="stylesheet" href="/styles.css?v=20260628-playground3" />
+    <link rel="stylesheet" href="/styles.css?v=20260628-playground4" />
   </head>
   <body class="page-playground">
     <header class="site-header">
@@ -56,6 +56,24 @@
           </div>
         </div>
 
+        <div class="selected-card-tools" aria-label="Selected card actions">
+          <span id="selectedCardStatus">No card selected</span>
+          <label>
+            Move to
+            <select id="moveToZone">
+              <option value="hand">Hand</option>
+              <option value="battlefield">Battlefield</option>
+              <option value="discard">Discard</option>
+              <option value="removed">Removed</option>
+              <option value="revealed">Revealed</option>
+              <option value="main_deck">Main Deck</option>
+              <option value="rune_deck">Rune Deck</option>
+            </select>
+          </label>
+          <button id="moveSelectedCard" type="button">Move Selected</button>
+          <button id="flipSelectedCard" type="button">Flip</button>
+        </div>
+
         <div id="tableZones" class="table-zones"></div>
       </section>
 
@@ -101,7 +119,7 @@
     </main>
 
     <script src="/brand.js?v=20260628-fixedbrand1" type="module"></script>
-    <script src="/playground.js?v=20260628-playground3" type="module"></script>
+    <script src="/playground.js?v=20260628-playground4" type="module"></script>
     <script src="/auth.js?v=20260628-readiness1" type="module"></script>
     <script src="/perf.js?v=20260628-perf2" type="module"></script>
   </body>

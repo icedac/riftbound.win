@@ -543,6 +543,55 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
             .len(),
         3
     );
+    let selected_instance = moved["table"]["seats"][0]["zones"]["hand"][1]["instance_id"]
+        .as_str()
+        .expect("selected card instance")
+        .to_string();
+
+    let move_selected = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"card.move","payload":{{"seat_index":0,"from":"hand","to":"battlefield","instance_id":"{selected_instance}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(move_selected.status(), StatusCode::CREATED);
+    let selected_moved = json(move_selected).await;
+    assert_eq!(selected_moved["event"]["sequence"], 3);
+    assert_eq!(
+        selected_moved["table"]["seats"][0]["zones"]["battlefield"][0]["instance_id"],
+        selected_instance
+    );
+    assert_eq!(
+        selected_moved["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let flip_selected = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"card.flip","payload":{{"seat_index":0,"zone":"battlefield","instance_id":"{selected_instance}","face_up":false}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(flip_selected.status(), StatusCode::CREATED);
+    let flipped = json(flip_selected).await;
+    assert_eq!(flipped["event"]["sequence"], 4);
+    assert_eq!(
+        flipped["table"]["seats"][0]["zones"]["battlefield"][0]["face_up"],
+        false
+    );
 
     let forged_snapshot = request(
         &app,
@@ -567,8 +616,9 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         .await,
     )
     .await;
-    assert_eq!(events["events"].as_array().unwrap().len(), 2);
+    assert_eq!(events["events"].as_array().unwrap().len(), 4);
     assert_eq!(events["events"][1]["type"], "card.move");
+    assert_eq!(events["events"][3]["type"], "card.flip");
 
     let table = json(
         request(
@@ -582,12 +632,20 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         .await,
     )
     .await;
-    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 2);
+    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 4);
     assert_eq!(
         table["table"]["seats"][0]["zones"]["hand"]
             .as_array()
             .unwrap()
             .len(),
-        2
+        1
+    );
+    assert_eq!(
+        table["table"]["seats"][0]["zones"]["battlefield"][0]["instance_id"],
+        selected_instance
+    );
+    assert_eq!(
+        table["table"]["seats"][0]["zones"]["battlefield"][0]["face_up"],
+        false
     );
 }

@@ -896,6 +896,7 @@ function applyPlaygroundEvent(table, event) {
   }
   if (event.type === "card.move") applyCardMove(table, event.payload);
   if (event.type === "card.reveal") applyCardReveal(table, event.payload);
+  if (event.type === "card.flip") applyCardFlip(table, event.payload);
   if (event.type === "turn.pass") table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
   if (event.type === "chat.message") {
     if (!Array.isArray(table.chat)) table.chat = [];
@@ -923,8 +924,11 @@ function applyCardMove(table, payload = {}) {
   const from = zoneName(payload.from);
   const to = zoneName(payload.to);
   if (!seat?.zones?.[from] || !seat.zones[to]) return;
-  const count = Math.max(1, Math.min(Number(payload.count || 1), seat.zones[from].length));
-  const moved = seat.zones[from].splice(0, count);
+  const selectedIndex = selectedCardIndex(seat.zones[from], payload);
+  const moved =
+    selectedIndex >= 0
+      ? seat.zones[from].splice(selectedIndex, 1)
+      : seat.zones[from].splice(0, Math.max(1, Math.min(Number(payload.count || 1), seat.zones[from].length)));
   seat.zones[to].push(...moved);
 }
 
@@ -932,10 +936,28 @@ function applyCardReveal(table, payload = {}) {
   const seat = table.seats?.[Number(payload.seat_index || 0)];
   const from = zoneName(payload.from || "hand");
   if (!seat?.zones?.[from]) return;
-  const index = payload.card_id ? seat.zones[from].findIndex((card) => card.id === payload.card_id) : 0;
+  const selectedIndex = selectedCardIndex(seat.zones[from], payload);
+  const index = payload.instance_id || payload.card_id ? selectedIndex : 0;
   if (index < 0) return;
   const [card] = seat.zones[from].splice(index, 1);
   seat.zones.revealed.push({ ...card, revealed_by: payload.revealed_by || seat.user_id });
+}
+
+function applyCardFlip(table, payload = {}) {
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const zone = zoneName(payload.zone || "battlefield");
+  const cards = seat?.zones?.[zone];
+  if (!cards) return;
+  const index = selectedCardIndex(cards, payload);
+  if (index < 0) return;
+  const currentFaceUp = cards[index].face_up !== false;
+  cards[index].face_up = typeof payload.face_up === "boolean" ? payload.face_up : !currentFaceUp;
+}
+
+function selectedCardIndex(cards = [], payload = {}) {
+  if (payload.instance_id) return cards.findIndex((card) => card.instance_id === payload.instance_id);
+  if (payload.card_id) return cards.findIndex((card) => card.id === payload.card_id);
+  return -1;
 }
 
 function applyResultProposal(table, event) {
@@ -957,7 +979,7 @@ function nextSeatUserId(table, actorId) {
 }
 
 function validPlaygroundEventType(type) {
-  return new Set(["game.start", "card.move", "card.reveal", "turn.pass", "chat.message", "voice.presence", "result.propose", "player.concede"]).has(type);
+  return new Set(["game.start", "card.move", "card.reveal", "card.flip", "turn.pass", "chat.message", "voice.presence", "result.propose", "player.concede"]).has(type);
 }
 
 function registerPlaygroundSocket(tableId, userId, socket) {

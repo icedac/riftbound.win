@@ -2321,16 +2321,48 @@ dialog::backdrop {
 
 .table-topline {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+}
+
+#tableTitle {
+  overflow-wrap: anywhere;
 }
 
 .table-actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
+}
+
+.selected-card-tools {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(140px, 180px) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 7px;
+  background: rgb(10 15 18 / 72%);
+}
+
+.selected-card-tools span {
+  align-self: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-card-tools label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
 }
 
 .table-zones {
@@ -2351,7 +2383,7 @@ dialog::backdrop {
 
 .zone-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(82px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: 8px;
 }
 
@@ -2383,15 +2415,34 @@ dialog::backdrop {
 }
 
 .card-chip {
+  display: inline-flex;
+  width: auto;
+  height: auto;
+  min-height: 0;
   max-width: 100%;
   overflow: hidden;
   padding: 3px 5px;
   border: 1px solid rgb(255 255 255 / 9%);
   border-radius: 5px;
+  background: rgb(255 255 255 / 4%);
   color: #dbe6ef;
   font-size: 11px;
+  font-weight: 760;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.card-chip:hover,
+.card-chip.selected {
+  border-color: rgb(245 158 11 / 72%);
+  background: rgb(245 158 11 / 12%);
+  color: #fff;
+}
+
+.card-chip.face-down {
+  border-style: dashed;
+  color: #facc15;
 }
 
 .playground-side section {
@@ -2467,6 +2518,7 @@ dialog::backdrop {
   }
 
   .table-topline,
+  .selected-card-tools,
   .playground-side {
     grid-template-columns: 1fr;
   }
