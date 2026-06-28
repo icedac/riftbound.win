@@ -556,8 +556,6 @@ label {
   min-width: 0;
   border-radius: 8px;
   color: var(--ink);
-  content-visibility: auto;
-  contain-intrinsic-size: 420px 340px;
 }
 
 .card button {

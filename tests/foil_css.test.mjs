@@ -30,6 +30,13 @@ test("foil layers are paint-contained to limit grid rendering cost", () => {
   assert.match(block, /contain:\s*paint/);
 });
 
+test("card grid cells do not skip initial painting", () => {
+  const block = cssBlock(".card");
+
+  assert.doesNotMatch(block, /content-visibility:\s*auto/);
+  assert.doesNotMatch(block, /contain-intrinsic-size/);
+});
+
 function cssBlock(selector) {
   const match = new RegExp(`(^|\\n)${escapeRegExp(selector)} \\{`).exec(css);
   const start = match?.index === undefined ? -1 : match.index + match[1].length;
