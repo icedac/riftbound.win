@@ -149,15 +149,27 @@ export function validateRiftboundDeck(sections = {}) {
   const errors = [];
   const warnings = [];
 
-  if (counts.main !== 40) errors.push(`Main deck must be exactly 40 cards. Current: ${counts.main}.`);
+  if (counts.main < 40) errors.push(`Main deck must include at least 40 cards. Current: ${counts.main}.`);
   if (counts.runes !== 12) errors.push(`Rune deck must be exactly 12 runes. Current: ${counts.runes}.`);
   if (counts.legends !== 1) errors.push(`Choose exactly 1 legend. Current: ${counts.legends}.`);
   if (counts.battlefields !== 3) errors.push(`Choose exactly 3 battlefields. Current: ${counts.battlefields}.`);
 
+  const mainCopiesByName = new Map();
   for (const entry of sections.main ?? []) {
-    if ((Number(entry.quantity) || 0) > 3) {
-      const name = entry.card?.name ? ` ${entry.card.name}` : "";
-      errors.push(`${entry.id}${name} exceeds the 3-copy main deck limit.`);
+    const quantity = Number(entry.quantity) || 0;
+    const id = normalizeCardId(entry.id);
+    const name = entry.card?.name || id;
+    const key = normalizeName(name);
+    const bucket = mainCopiesByName.get(key) ?? { name, ids: new Set(), total: 0 };
+    bucket.ids.add(id);
+    bucket.total += quantity;
+    mainCopiesByName.set(key, bucket);
+  }
+
+  for (const bucket of mainCopiesByName.values()) {
+    if (bucket.total > 3) {
+      const ids = [...bucket.ids].join(", ");
+      errors.push(`${bucket.name} (${ids}) exceeds the 3-copy main deck limit. Current: ${bucket.total}.`);
     }
   }
 
@@ -177,10 +189,13 @@ export function drawTestHand(sections = {}, cardsOrIndex = [], options = {}) {
   const mainPool = expandEntries(sections.main ?? [], index);
   const runePool = expandEntries(sections.runes ?? [], index);
 
+  const runes = seededShuffle(runePool, seed + 97).slice(0, runeChannels);
+
   return {
     seed,
     hand: seededShuffle(mainPool, seed).slice(0, handSize),
-    runes: seededShuffle(runePool, seed + 97).slice(0, runeChannels),
+    runes,
+    runeChannels: runes.map((entry) => [entry]),
   };
 }
 

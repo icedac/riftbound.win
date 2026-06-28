@@ -1,15 +1,15 @@
 const BRAND_BY_DOMAIN = [
   { suffix: "riftbound.kr", label: "Riftbound.kr" },
-  { suffix: "riftbound.win", label: "Riftbound.win" },
+  { suffix: "riftbound.win", label: "Riftbound.kr" },
 ];
 
 export function brandForHostname(hostname = "") {
   const normalized = String(hostname).toLowerCase();
   const match = BRAND_BY_DOMAIN.find(({ suffix }) => normalized === suffix || normalized.endsWith(`.${suffix}`));
-  return match?.label || "Riftbound.win";
+  return match?.label || "Riftbound.kr";
 }
 
-export function brandedTitle(currentTitle = "", brand = "Riftbound.win") {
+export function brandedTitle(currentTitle = "", brand = "Riftbound.kr") {
   const suffix = String(currentTitle).replace(/^Riftbound\.(?:kr|win)\s*/i, "").trim();
   return suffix ? `${brand} ${suffix}` : brand;
 }

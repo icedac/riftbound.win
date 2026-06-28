@@ -161,6 +161,29 @@ test("validates Riftbound constructed deck counts", () => {
   assert.deepEqual(validation.errors, []);
 });
 
+test("allows main decks above the 40 card minimum from the core rules", () => {
+  const index = createCardIndex(cards);
+  const sections = buildDeckSections(
+    [
+      ...cards
+        .filter((card) => card.id.startsWith("TST-"))
+        .map((card, idx) => ({ id: card.id, quantity: idx === 13 ? 2 : 3 })),
+      { id: "OGN-126", quantity: 10 },
+      { id: "OGN-042", quantity: 2 },
+      { id: "UNL-236-STAR", quantity: 1 },
+      { id: "UNL-205", quantity: 1 },
+      { id: "UNL-206", quantity: 1 },
+      { id: "OGN-275", quantity: 1 },
+    ],
+    index
+  );
+
+  const validation = validateRiftboundDeck(sections);
+
+  assert.equal(validation.counts.main, 41);
+  assert(!validation.errors.some((message) => /main deck/i.test(message)));
+});
+
 test("validates the three-copy limit for main deck cards but not rune quantities", () => {
   const index = createCardIndex(cards);
   const sections = buildDeckSections(
@@ -180,6 +203,30 @@ test("validates the three-copy limit for main deck cards but not rune quantities
 
   assert(validation.errors.some((message) => message.includes("OGN-111") && message.includes("3")));
   assert(!validation.errors.some((message) => message.includes("OGN-126")));
+});
+
+test("validates main deck copy limits by card name across print variants", () => {
+  const index = createCardIndex([
+    ...cards,
+    { id: "OGN-111a", name: "Heimerdinger - Inventor", colors: ["Mind"], card_type: "Unit", cost: "3" },
+  ]);
+  const sections = buildDeckSections(
+    [
+      { id: "OGN-111", quantity: 3 },
+      { id: "OGN-111a", quantity: 1 },
+      { id: "OGN-126", quantity: 10 },
+      { id: "OGN-042", quantity: 2 },
+      { id: "UNL-236-STAR", quantity: 1 },
+      { id: "UNL-205", quantity: 1 },
+      { id: "UNL-206", quantity: 1 },
+      { id: "OGN-275", quantity: 1 },
+    ],
+    index
+  );
+
+  const validation = validateRiftboundDeck(sections);
+
+  assert(validation.errors.some((message) => message.includes("Heimerdinger - Inventor") && message.includes("3")));
 });
 
 test("draws deterministic test hand from main deck and two runes from rune deck", () => {
@@ -207,6 +254,29 @@ test("draws deterministic test hand from main deck and two runes from rune deck"
   );
   assert.deepEqual(
     repeat.runes.map((entry) => entry.id),
+    draw.runes.map((entry) => entry.id)
+  );
+});
+
+test("draws separate rune channel groups for the deck editor", () => {
+  const index = createCardIndex(cards);
+  const sections = buildDeckSections(
+    [
+      { id: "OGN-111", quantity: 5 },
+      { id: "SFD-001", quantity: 5 },
+      { id: "OGN-126", quantity: 3 },
+      { id: "OGN-042", quantity: 3 },
+    ],
+    index
+  );
+
+  const draw = drawTestHand(sections, index, { seed: 11, handSize: 4, runeChannels: 2 });
+
+  assert.equal(draw.runeChannels.length, 2);
+  assert.equal(draw.runeChannels[0].length, 1);
+  assert.equal(draw.runeChannels[1].length, 1);
+  assert.deepEqual(
+    draw.runeChannels.flat().map((entry) => entry.id),
     draw.runes.map((entry) => entry.id)
   );
 });

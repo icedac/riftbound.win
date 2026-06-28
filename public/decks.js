@@ -8,11 +8,12 @@ import {
   sectionForCard,
   summarizeDeck,
   validateRiftboundDeck,
-} from "/deck-utils.js?v=20260628-deckutils1";
+} from "/deck-utils.js?v=20260628-deckeditor1";
 import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 
 const STORAGE_KEY = "riftbound.deck.v2";
 const RESULT_LIMIT = 80;
+const RUNE_CHANNEL_LABELS = ["Rune channel 1", "Rune channel 2"];
 const sectionLabels = {
   main: "Main Deck",
   runes: "Rune Deck",
@@ -20,7 +21,7 @@ const sectionLabels = {
   battlefields: "Battlefields",
 };
 const sectionTargets = {
-  main: 40,
+  main: "40+",
   runes: 12,
   legends: 1,
   battlefields: 3,
@@ -172,7 +173,7 @@ function renderDeckBoard() {
   const summary = summarizeDeck(flatEntries, state.index);
   const validation = validateRiftboundDeck(sections);
   els.deckStats.replaceChildren(
-    statNode(validation.counts.main, "main / 40"),
+    statNode(validation.counts.main, "main / 40+"),
     statNode(validation.counts.runes, "runes / 12"),
     statNode(validation.counts.legends, "legend / 1"),
     statNode(validation.counts.battlefields, "fields / 3")
@@ -200,12 +201,12 @@ function renderDeckBoard() {
 
 function renderTopDeckList(sections, validation) {
   const cardCount = validation.counts.legends + validation.counts.main + validation.counts.battlefields;
-  els.cardDeckCount.textContent = `${cardCount} / 44`;
+  els.cardDeckCount.textContent = `${cardCount} / 44+`;
   els.runeDeckCount.textContent = `${validation.counts.runes} / 12`;
 
   els.cardDeckList.replaceChildren(
     compactSection("Chosen Legend", sections.legends ?? [], 1),
-    compactSection("Main Deck", sections.main ?? [], 40),
+    compactSection("Main Deck", sections.main ?? [], "40+"),
     compactSection("Battlefields", sections.battlefields ?? [], 3)
   );
   els.runeDeckList.replaceChildren(compactSection("Rune Deck", sections.runes ?? [], 12));
@@ -361,14 +362,18 @@ function previewDeckStatus(card) {
 
 function renderDraw() {
   if (!state.draw) {
-    const empty = text("p", "Draw a 4-card opening hand and channel 2 runes.");
+    const empty = text("p", "Draw a 4-card opening hand and channel 2 separate runes.");
     empty.className = "deck-section-empty";
     els.drawOutput.replaceChildren(empty);
     return;
   }
 
   const root = document.createDocumentFragment();
-  root.append(drawGroup("Opening hand", state.draw.hand), drawGroup("Channel 2 runes", state.draw.runes));
+  root.append(drawGroup("Opening hand", state.draw.hand));
+  const runeChannels = state.draw.runeChannels ?? state.draw.runes.map((entry) => [entry]);
+  runeChannels.forEach((entries, index) => {
+    root.append(drawGroup(RUNE_CHANNEL_LABELS[index] || `Rune channel ${index + 1}`, entries));
+  });
   els.drawOutput.replaceChildren(root);
 }
 

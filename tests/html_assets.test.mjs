@@ -19,11 +19,11 @@ test("HTML pages load cache-busted stylesheet URLs", async () => {
   }
 });
 
-test("public pages default to Riftbound.win and expose runtime brand targets", async () => {
+test("public pages default to Riftbound.kr and expose runtime brand targets", async () => {
   for (const path of pages) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-    assert.match(html, /Riftbound\.win/, path);
+    assert.match(html, /Riftbound\.kr/, path);
     assert.match(html, /data-brand/, path);
   }
 });
@@ -63,8 +63,10 @@ test("cards app recovers browser-restored zero-result filter state", async () =>
   const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 
   assert.match(source, /resolveRestoredCardFilters/);
+  assert.match(source, /shouldRecoverRenderedCardGrid/);
   assert.match(source, /recoverRestoredCardState/);
   assert.match(source, /addEventListener\("pageshow"/);
+  assert.match(source, /addEventListener\("focus"/);
 });
 
 test("foil helper imports are cache-busted wherever foil rendering is used", async () => {

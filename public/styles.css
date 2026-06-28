@@ -1081,18 +1081,22 @@ dialog::backdrop {
 
 .deck-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
-  gap: 20px;
-  width: min(1540px, 100%);
+  grid-template-columns: minmax(390px, 0.95fr) minmax(420px, 1fr) minmax(360px, 430px);
+  align-items: start;
+  gap: 16px;
+  width: min(1680px, 100%);
   margin: 0 auto;
   padding: 28px clamp(16px, 4vw, 44px) 48px;
 }
 
 .deck-board {
-  grid-column: 1 / -1;
+  position: sticky;
+  top: 76px;
   display: grid;
   gap: 16px;
   min-width: 0;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1110,22 +1114,26 @@ dialog::backdrop {
 }
 
 .deck-browser {
+  position: sticky;
+  top: 76px;
   display: grid;
   align-content: start;
   gap: 16px;
   min-width: 0;
+  max-height: calc(100vh - 96px);
+  overflow: auto;
   padding: 18px;
 }
 
 .deck-filters {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(130px, 180px) minmax(130px, 180px);
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
 .deck-results {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
@@ -1225,7 +1233,7 @@ dialog::backdrop {
 .deck-stats,
 .board-counts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1252,9 +1260,13 @@ dialog::backdrop {
   font-size: 22px;
 }
 
+.board-counts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .deck-rules {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1323,7 +1335,7 @@ dialog::backdrop {
 
 .deck-list-top {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: start;
 }
@@ -1377,7 +1389,7 @@ dialog::backdrop {
 .deck-list-rows {
   display: grid;
   gap: 6px;
-  max-height: 250px;
+  max-height: 190px;
   overflow: auto;
 }
 
@@ -1546,7 +1558,7 @@ dialog::backdrop {
 
 .deck-tools {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(300px, 0.85fr);
+  grid-template-columns: 1fr;
   gap: 12px;
   align-items: stretch;
 }
@@ -2000,6 +2012,8 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
+  .deck-board,
+  .deck-browser,
   .deck-panel,
   .card-inspector,
   .board-rail,

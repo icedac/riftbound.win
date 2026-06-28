@@ -5,8 +5,13 @@ import {
   resolveInitialCardFilters,
   resolveRestoredCardFilters,
 } from "/card-filter-state.js?v=20260628-cardsrecover1";
-import { shouldRepairInitialCardGrid } from "/card-grid-repair.js?v=20260628-gridrepair1";
+import {
+  shouldRecoverRenderedCardGrid,
+  shouldRepairInitialCardGrid,
+} from "/card-grid-repair.js?v=20260628-cardsvisible1";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardboot3";
+
+const GRID_RECOVERY_DELAYS = [0, 100, 350, 1000, 2000];
 
 const state = {
   cards: [],
@@ -108,6 +113,8 @@ function bindEvents() {
     if (event.target === els.detail) els.detail.close();
   });
   window.addEventListener("pageshow", recoverRestoredCardState);
+  window.addEventListener("focus", recoverRestoredCardState);
+  window.addEventListener("load", recoverRestoredCardState);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) recoverRestoredCardState();
   });
@@ -163,13 +170,22 @@ function scheduleInitialGridRepair() {
 }
 
 function scheduleRestoredStateRecovery() {
-  window.setTimeout(recoverRestoredCardState, 350);
+  for (const delay of GRID_RECOVERY_DELAYS) {
+    window.setTimeout(recoverRestoredCardState, delay);
+  }
 }
 
 function recoverRestoredCardState() {
   if (!state.cards.length || !els.grid) return;
   const renderedCards = els.grid.querySelectorAll(".card").length;
-  if (renderedCards > 0 && state.filtered.length > 0) return;
+  const visibleCards = Math.min(state.visibleCount, state.filtered.length);
+  const gridNeedsRender = shouldRecoverRenderedCardGrid({
+    totalCards: state.cards.length,
+    filteredCards: state.filtered.length,
+    visibleCards,
+    renderedCards,
+  });
+  if (!gridNeedsRender && renderedCards > 0 && state.filtered.length > 0) return;
 
   const result = resolveRestoredCardFilters(state.cards, currentControlFilters());
   const nextVisibleCount = Math.max(PAGE_SIZE, Math.min(state.visibleCount, result.filtered.length || PAGE_SIZE));
