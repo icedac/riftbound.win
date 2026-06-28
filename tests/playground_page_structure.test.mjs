@@ -99,6 +99,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /function orderedSeats/);
   assert.match(js, /orderedSeats\(table\)\.map\(seatZones\)/);
   assert.match(js, /function renderCardPreview/);
+  assert.match(js, /isHiddenCard/);
   assert.match(js, /function cardImageSrc/);
   assert.match(js, /document\.createElement\("img"\)/);
   assert.match(js, /mouseover/);
@@ -106,6 +107,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(css, /\.card-hover-preview/);
   assert.match(css, /\.seat-board\.is-current-player/);
   assert.match(css, /\.card-chip img/);
+  assert.match(css, /\.card-chip\.hidden-card/);
 });
 
 test("playground labels setup-aware draw and rune channel actions", async () => {

@@ -1,4 +1,5 @@
 import { replayTableEvents } from "/playground-state.js?v=20260628-playground5";
+import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
   createSignalEnvelope,
@@ -663,7 +664,7 @@ function renderSelectedCard() {
 function renderCardPreview() {
   if (!els.cardPreview) return;
   const selected = selectedCardRecord(state.hoveredCard) || selectedCardRecord();
-  if (!selected) {
+  if (!selected || isHiddenCard(selected.card)) {
     els.cardPreview.replaceChildren(empty("Hover a card to read it."));
     return;
   }
@@ -692,9 +693,11 @@ function renderCardPreview() {
 function cardChip(card, seat, zone) {
   const node = document.createElement("button");
   node.type = "button";
+  const hidden = isHiddenCard(card);
   const selected = state.selectedCard;
   node.className = [
     "card-chip",
+    hidden ? "hidden-card" : "",
     card.face_up === false ? "face-down" : "",
     selected?.instanceId === card.instance_id ? "selected" : "",
   ]
@@ -704,6 +707,12 @@ function cardChip(card, seat, zone) {
   node.dataset.zone = zone;
   node.dataset.cardInstanceId = card.instance_id;
   node.dataset.cardId = card.id;
+  if (hidden) {
+    node.disabled = true;
+    node.append(text("span", cardLabel(card)));
+    node.title = cardLabel(card);
+    return node;
+  }
   const src = cardImageSrc(card);
   if (src) {
     const image = document.createElement("img");
@@ -729,12 +738,14 @@ function cardRefFromNode(node) {
 }
 
 function cardLabel(card) {
+  if (isHiddenCard(card)) return "Hidden card";
   if (card?.face_up === false) return "Face down";
   const catalog = catalogCard(card);
   return catalog?.name || card?.id || "Card";
 }
 
 function cardImageSrc(card) {
+  if (isHiddenCard(card)) return "";
   if (card?.face_up === false) {
     const catalog = catalogCard(card);
     return catalog?.local_image_back || catalog?.image_back_url || "";

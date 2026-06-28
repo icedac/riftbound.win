@@ -26,7 +26,8 @@ The first playable slice should model table flow, piles, public logs, card movem
 Playground implication:
 - Keep `main_deck`, `rune_deck`, `hand`, `battlefield`, `discard`, `removed`, and `revealed` zones.
 - Add future `legend_zone`, `champion_zone`, `base`, `battlefields`, and `rune_pool` zones before attempting stricter automation.
-- For now, do not reveal opponent hand faces by default once privacy masking is added. The current image view is intentionally a debugging/playtest convenience.
+- Playground API responses now mask Main Deck, Rune Deck, opponent hands, and opponent face-down cards with hidden placeholders while preserving card counts.
+- Stored table snapshots remain complete so owner actions and replay reduction can stay deterministic. User-facing HTTP/WebSocket snapshots are derived views.
 
 ## Turn Skeleton
 

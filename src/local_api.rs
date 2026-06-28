@@ -18,6 +18,7 @@ const SESSION_DAYS: i64 = 30;
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
 const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
 const PLAYGROUND_VICTORY_SCORE: i64 = 8;
+const HIDDEN_CARD_ID: &str = "__hidden__";
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -480,10 +481,20 @@ async fn create_saved_deck(
 
 async fn list_playground_tables(
     State(state): State<Arc<LocalApiState>>,
-    _headers: HeaderMap,
+    headers: HeaderMap,
 ) -> Response {
+    let viewer_user_id = current_user(&state, &headers)
+        .ok()
+        .flatten()
+        .map(|user| user.id)
+        .unwrap_or_default();
     match playground_tables(&state) {
-        Ok(tables) => json_response(json!({ "tables": tables })),
+        Ok(tables) => json_response(json!({
+            "tables": tables
+                .iter()
+                .map(|table| public_table_for_user(table, &viewer_user_id))
+                .collect::<Vec<_>>()
+        })),
         Err(error) => server_error(error),
     }
 }
@@ -513,7 +524,11 @@ async fn create_playground_table(
         Ok(table)
     });
     match result {
-        Ok(table) => (StatusCode::CREATED, Json(json!({ "table": table }))).into_response(),
+        Ok(table) => (
+            StatusCode::CREATED,
+            Json(json!({ "table": public_table_for_user(&table, &user.id) })),
+        )
+            .into_response(),
         Err(error) if error.to_string().contains("Deck not found") => bad_request("Deck not found"),
         Err(error) => server_error(error),
     }
@@ -521,10 +536,18 @@ async fn create_playground_table(
 
 async fn get_playground_table(
     State(state): State<Arc<LocalApiState>>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
+    let viewer_user_id = current_user(&state, &headers)
+        .ok()
+        .flatten()
+        .map(|user| user.id)
+        .unwrap_or_default();
     match playground_table(&state, &id) {
-        Ok(Some(table)) => json_response(json!({ "table": table })),
+        Ok(Some(table)) => {
+            json_response(json!({ "table": public_table_for_user(&table, &viewer_user_id) }))
+        }
         Ok(None) => not_found("Table not found"),
         Err(error) => server_error(error),
     }
@@ -573,7 +596,7 @@ async fn join_playground_table(
         Ok(table)
     });
     match result {
-        Ok(table) => json_response(json!({ "table": table })),
+        Ok(table) => json_response(json!({ "table": public_table_for_user(&table, &user.id) })),
         Err(error) if error.to_string().contains("Deck not found") => bad_request("Deck not found"),
         Err(error) if error.to_string().contains("Table not found") => not_found("Table not found"),
         Err(error) if error.to_string().contains("Table is full") => (
@@ -612,7 +635,7 @@ async fn append_playground_event(
             anyhow::bail!("Table seat required");
         }
         let mut table = safe_json(&row.2, json!({}));
-        validate_playground_event(&table, &user, &event_type)?;
+        validate_playground_event(&table, &user, &event_type, &event_payload)?;
         let sequence = next_playground_sequence(conn, &id)?;
         let now = now_ms();
         let event_id = new_id("event");
@@ -644,7 +667,7 @@ async fn append_playground_event(
             "UPDATE local_playground_tables SET updated_at = ?, active_snapshot_json = ?, status = ? WHERE id = ?",
             params![now, table.to_string(), status, id],
         )?;
-        Ok(json!({ "table": table, "event": event }))
+        Ok(json!({ "table": public_table_for_user(&table, &user.id), "event": event }))
     });
     match result {
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
@@ -653,6 +676,11 @@ async fn append_playground_event(
         Err(error) if error.to_string().contains("Table host required") => (
             StatusCode::FORBIDDEN,
             Json(json!({ "error": "Only the table host can start" })),
+        )
+            .into_response(),
+        Err(error) if error.to_string().contains("Private zone requires owner") => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Private zone requires owner" })),
         )
             .into_response(),
         Err(error) if error.to_string().contains("Table needs two players") => (
@@ -1174,6 +1202,86 @@ fn create_seat_snapshot(
     })
 }
 
+fn public_table_for_user(table: &Value, viewer_user_id: &str) -> Value {
+    let mut public_table = table.clone();
+    let Some(seats) = public_table.get_mut("seats").and_then(Value::as_array_mut) else {
+        return public_table;
+    };
+    for seat in seats {
+        let seat_user_id = seat
+            .get("user_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let Some(zones) = seat.get_mut("zones").and_then(Value::as_object_mut) else {
+            continue;
+        };
+        let zone_names = zones.keys().cloned().collect::<Vec<_>>();
+        for zone_name in zone_names {
+            let Some(cards) = zones.get_mut(&zone_name).and_then(Value::as_array_mut) else {
+                continue;
+            };
+            let public_cards = cards
+                .iter()
+                .enumerate()
+                .map(|(index, card)| {
+                    public_card_for_user(card, &seat_user_id, &zone_name, viewer_user_id, index)
+                })
+                .collect::<Vec<_>>();
+            *cards = public_cards;
+        }
+    }
+    public_table
+}
+
+fn public_card_for_user(
+    card: &Value,
+    seat_user_id: &str,
+    zone: &str,
+    viewer_user_id: &str,
+    index: usize,
+) -> Value {
+    if !should_hide_card(card, seat_user_id, zone, viewer_user_id) {
+        return card.clone();
+    }
+    let normalized_zone = zone_name(zone);
+    let mut hidden = json!({
+        "id": HIDDEN_CARD_ID,
+        "instance_id": format!("hidden-{}-{}", if normalized_zone.is_empty() { "zone" } else { normalized_zone.as_str() }, index + 1),
+        "hidden": true,
+        "hidden_zone": normalized_zone,
+    });
+    if card.get("face_up").and_then(Value::as_bool) == Some(false) {
+        hidden["face_up"] = json!(false);
+    }
+    hidden
+}
+
+fn should_hide_card(card: &Value, seat_user_id: &str, zone: &str, viewer_user_id: &str) -> bool {
+    let normalized_zone = zone_name(zone);
+    if card.get("hidden").and_then(Value::as_bool).unwrap_or(false)
+        || card.get("id").and_then(Value::as_str) == Some(HIDDEN_CARD_ID)
+    {
+        return true;
+    }
+    if is_secret_deck_zone(&normalized_zone) {
+        return true;
+    }
+    if normalized_zone == "hand" && seat_user_id != viewer_user_id {
+        return true;
+    }
+    card.get("face_up").and_then(Value::as_bool) == Some(false) && seat_user_id != viewer_user_id
+}
+
+fn is_private_card_zone(zone: &str) -> bool {
+    let normalized_zone = zone_name(zone);
+    is_secret_deck_zone(&normalized_zone) || normalized_zone == "hand"
+}
+
+fn is_secret_deck_zone(zone: &str) -> bool {
+    matches!(zone, "main_deck" | "rune_deck")
+}
+
 fn build_playground_zones(deck_json: &Value) -> Value {
     let mut main_deck = Vec::new();
     let mut rune_deck = Vec::new();
@@ -1251,7 +1359,12 @@ fn deck_entry_from_section(value: &Value, section: &str) -> Option<DeckEntry> {
     Some(entry)
 }
 
-fn validate_playground_event(table: &Value, user: &SessionUser, event_type: &str) -> Result<()> {
+fn validate_playground_event(
+    table: &Value,
+    user: &SessionUser,
+    event_type: &str,
+    payload: &Value,
+) -> Result<()> {
     if event_type == "game.start" {
         if playground_host_user_id(table) != Some(user.id.as_str()) {
             anyhow::bail!("Table host required");
@@ -1264,12 +1377,52 @@ fn validate_playground_event(table: &Value, user: &SessionUser, event_type: &str
         }
         return Ok(());
     }
+    if private_zone_action_denied(table, user, event_type, payload) {
+        anyhow::bail!("Private zone requires owner");
+    }
     if active_playground_event_type(event_type)
         && table.get("status").and_then(Value::as_str) != Some("active")
     {
         anyhow::bail!("Game has not started");
     }
     Ok(())
+}
+
+fn private_zone_action_denied(
+    table: &Value,
+    user: &SessionUser,
+    event_type: &str,
+    payload: &Value,
+) -> bool {
+    if !matches!(event_type, "card.move" | "card.reveal" | "card.flip") {
+        return false;
+    }
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let Some(seat) = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .and_then(|seats| seats.get(seat_index))
+    else {
+        return false;
+    };
+    if seat.get("user_id").and_then(Value::as_str) == Some(user.id.as_str()) {
+        return false;
+    }
+    let zone = if event_type == "card.flip" {
+        payload
+            .get("zone")
+            .and_then(Value::as_str)
+            .unwrap_or("battlefield")
+    } else {
+        payload
+            .get("from")
+            .and_then(Value::as_str)
+            .unwrap_or("hand")
+    };
+    is_private_card_zone(zone)
 }
 
 fn playground_host_user_id(table: &Value) -> Option<&str> {

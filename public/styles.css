@@ -2474,6 +2474,31 @@ dialog::backdrop {
   color: #facc15;
 }
 
+.card-chip.hidden-card {
+  cursor: default;
+  border-color: rgb(148 163 184 / 34%);
+  background:
+    linear-gradient(135deg, rgb(20 28 35 / 96%), rgb(7 11 16 / 96%)),
+    repeating-linear-gradient(45deg, rgb(245 158 11 / 18%) 0 6px, transparent 6px 12px);
+  color: #e5eef6;
+}
+
+.card-chip.hidden-card span {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  align-items: end;
+  padding: 8px 5px;
+  background: linear-gradient(180deg, transparent 28%, rgb(0 0 0 / 72%));
+}
+
+.card-chip.hidden-card:hover {
+  border-color: rgb(148 163 184 / 34%);
+  background:
+    linear-gradient(135deg, rgb(20 28 35 / 96%), rgb(7 11 16 / 96%)),
+    repeating-linear-gradient(45deg, rgb(245 158 11 / 18%) 0 6px, transparent 6px 12px);
+}
+
 .card-hover-preview {
   position: sticky;
   bottom: 12px;

@@ -1,5 +1,6 @@
 const SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
 const BROADCAST_TYPES = new Set(["table.snapshot", "table.event", "presence.update"]);
+const HIDDEN_CARD_ID = "__hidden__";
 
 export default {
   async fetch() {
@@ -45,7 +46,7 @@ export class PlaygroundTable {
 
     this.send(server, {
       type: "table.snapshot",
-      table: await this.tableSnapshot(tableId),
+      table: publicTableForUser(await this.tableSnapshot(tableId), userId),
       user_id: userId,
     });
     this.broadcast(
@@ -114,7 +115,7 @@ export class PlaygroundTable {
     for (const [socket, session] of this.sessions.entries()) {
       if (exceptUserId && session.userId === exceptUserId) continue;
       if (message.target_user_id && message.target_user_id !== session.userId) continue;
-      this.send(socket, message);
+      this.send(socket, publicPlaygroundMessageForUser(message, session.userId));
     }
   }
 
@@ -125,6 +126,52 @@ export class PlaygroundTable {
       this.sessions.delete(socket);
     }
   }
+}
+
+function publicPlaygroundMessageForUser(message, userId) {
+  if (!message?.table) return message;
+  return { ...message, table: publicTableForUser(message.table, userId) };
+}
+
+function publicTableForUser(table = {}, viewerUserId = "") {
+  const next = cloneJson(table && typeof table === "object" ? table : {});
+  for (const seat of next.seats || []) {
+    for (const [zone, cards] of Object.entries(seat.zones || {})) {
+      if (!Array.isArray(cards)) continue;
+      seat.zones[zone] = cards.map((card, index) => publicCardForUser(card, seat, zone, viewerUserId, index));
+    }
+  }
+  return next;
+}
+
+function publicCardForUser(card = {}, seat = {}, zone = "", viewerUserId = "", index = 0) {
+  if (!shouldHideCard(card, seat, zone, viewerUserId)) return cloneJson(card);
+  return {
+    id: HIDDEN_CARD_ID,
+    instance_id: `hidden-${zoneName(zone) || "zone"}-${index + 1}`,
+    hidden: true,
+    hidden_zone: zoneName(zone),
+    ...(card.face_up === false ? { face_up: false } : {}),
+  };
+}
+
+function shouldHideCard(card = {}, seat = {}, zone = "", viewerUserId = "") {
+  const normalizedZone = zoneName(zone);
+  if (card?.hidden || card?.id === HIDDEN_CARD_ID) return true;
+  if (new Set(["main_deck", "rune_deck"]).has(normalizedZone)) return true;
+  if (normalizedZone === "hand" && seat.user_id !== viewerUserId) return true;
+  if (card.face_up === false && seat.user_id !== viewerUserId) return true;
+  return false;
+}
+
+function zoneName(value) {
+  return String(value || "")
+    .replace(/-/g, "_")
+    .toLowerCase();
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
 }
 
 function isSignal(message) {

@@ -663,7 +663,32 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(started.table.status, "active");
   assert.equal(started.table.seats[0].zones.hand.length, 4);
   assert.equal(started.table.seats[1].zones.hand.length, 4);
+  assert.equal(started.table.seats[0].zones.hand[0].id, "OGN-001");
+  assert.equal(started.table.seats[1].zones.hand[0].id, "__hidden__");
+  assert.equal(started.table.seats[1].zones.hand[0].hidden, true);
+  assert.equal(started.table.seats[0].zones.main_deck[0].id, "__hidden__");
   assert.equal(started.table.seats[0].zones.main_deck.length, 1);
+
+  const guestView = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}`, {
+      headers: { Cookie: "rw_session=guest-session" },
+    }),
+    env
+  );
+  assert.equal(guestView.status, 200);
+  const guestVisible = await guestView.json();
+  assert.equal(guestVisible.table.seats[0].zones.hand[0].id, "__hidden__");
+  assert.equal(guestVisible.table.seats[1].zones.hand[0].id, "OGN-002");
+
+  const opponentHandMove = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "card.move", payload: { seat_index: 1, from: "hand", to: "battlefield", count: 1 } }),
+    }),
+    env
+  );
+  assert.equal(opponentHandMove.status, 403);
 
   const move = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {

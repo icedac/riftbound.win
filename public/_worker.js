@@ -9,6 +9,7 @@ const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const MAX_INLINE_MEDIA_BYTES = 1024 * 1024;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const PLAYGROUND_VICTORY_SCORE = 8;
+const HIDDEN_CARD_ID = "__hidden__";
 const PLAYGROUND_SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
 const playgroundSockets = new Map();
 
@@ -36,12 +37,12 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/posts" && request.method === "POST") return createPost(request, env);
   if (url.pathname === "/api/saved-decks" && request.method === "GET") return listSavedDecks(request, env);
   if (url.pathname === "/api/saved-decks" && request.method === "POST") return createSavedDeck(request, env);
-  if (url.pathname === "/api/playground/tables" && request.method === "GET") return listPlaygroundTables(env);
+  if (url.pathname === "/api/playground/tables" && request.method === "GET") return listPlaygroundTables(request, env);
   if (url.pathname === "/api/playground/tables" && request.method === "POST") return createPlaygroundTable(request, env);
   const websocketRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/ws$/);
   if (websocketRoute) return handlePlaygroundWebSocket(request, env, decodeURIComponent(websocketRoute[1]));
   const tableRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)$/);
-  if (tableRoute && request.method === "GET") return getPlaygroundTable(env, decodeURIComponent(tableRoute[1]));
+  if (tableRoute && request.method === "GET") return getPlaygroundTable(request, env, decodeURIComponent(tableRoute[1]));
   const joinRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/join$/);
   if (joinRoute && request.method === "POST") return joinPlaygroundTable(request, env, decodeURIComponent(joinRoute[1]));
   const eventsRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/events$/);
@@ -240,12 +241,13 @@ async function createSavedDeck(request, env) {
   return json({ deck }, 201);
 }
 
-async function listPlaygroundTables(env) {
+async function listPlaygroundTables(request, env) {
   if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
   const rows = await env.DB.prepare(
     "SELECT active_snapshot_json FROM playground_tables ORDER BY updated_at DESC LIMIT 80"
   ).all();
-  return json({ tables: (rows.results || []).map((row) => safeJson(row.active_snapshot_json, {})) });
+  return json({ tables: (rows.results || []).map((row) => publicTableForUser(safeJson(row.active_snapshot_json, {}), session?.user?.id || "")) });
 }
 
 async function createPlaygroundTable(request, env) {
@@ -266,14 +268,15 @@ async function createPlaygroundTable(request, env) {
     .bind(tableId, session.user.id, "waiting", now, now, JSON.stringify(table))
     .run();
   await insertPlaygroundSeat(env, tableId, 0, session.user, deck, now);
-  return json({ table }, 201);
+  return json({ table: publicTableForUser(table, session.user.id) }, 201);
 }
 
-async function getPlaygroundTable(env, tableId) {
+async function getPlaygroundTable(request, env, tableId) {
   if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
   const row = await playgroundTableRow(env, tableId);
   if (!row) return json({ error: "Table not found" }, 404);
-  return json({ table: safeJson(row.active_snapshot_json, {}) });
+  return json({ table: publicTableForUser(safeJson(row.active_snapshot_json, {}), session?.user?.id || "") });
 }
 
 async function joinPlaygroundTable(request, env, tableId) {
@@ -288,7 +291,7 @@ async function joinPlaygroundTable(request, env, tableId) {
   const row = await playgroundTableRow(env, tableId);
   if (!row) return json({ error: "Table not found" }, 404);
   const existingSeat = await playgroundSeatIndex(env, tableId, session.user.id);
-  if (existingSeat) return json({ table: safeJson(row.active_snapshot_json, {}) });
+  if (existingSeat) return json({ table: publicTableForUser(safeJson(row.active_snapshot_json, {}), session.user.id) });
   const seatCount = await playgroundSeatCount(env, tableId);
   if (seatCount >= 2) return json({ error: "Table is full" }, 409);
   const now = Date.now();
@@ -306,7 +309,7 @@ async function joinPlaygroundTable(request, env, tableId) {
     .run();
   await broadcastPlaygroundActorMessage(env, tableId, { type: "table.snapshot", table });
   broadcastTableMessage(tableId, { type: "table.snapshot", table });
-  return json({ table });
+  return json({ table: publicTableForUser(table, session.user.id) });
 }
 
 async function appendPlaygroundEvent(request, env, tableId) {
@@ -323,7 +326,7 @@ async function appendPlaygroundEvent(request, env, tableId) {
   const seat = await playgroundSeatIndex(env, tableId, session.user.id);
   if (!seat) return json({ error: "Sign in required" }, 401);
   const table = safeJson(row.active_snapshot_json, {});
-  const eventError = validatePlaygroundEvent(table, session.user, eventType);
+  const eventError = validatePlaygroundEvent(table, session.user, eventType, payload);
   if (eventError) return json({ error: eventError.message }, eventError.status);
   const sequence = (await nextPlaygroundSequence(env, tableId)) + 1;
   const now = Date.now();
@@ -351,7 +354,7 @@ async function appendPlaygroundEvent(request, env, tableId) {
     .run();
   await broadcastPlaygroundActorMessage(env, tableId, { type: "table.event", table, event });
   broadcastTableMessage(tableId, { type: "table.event", table, event });
-  return json({ table, event }, 201);
+  return json({ table: publicTableForUser(table, session.user.id), event }, 201);
 }
 
 async function listPlaygroundEvents(env, tableId, url) {
@@ -398,7 +401,7 @@ async function handlePlaygroundWebSocket(request, env, tableId) {
   registerPlaygroundSocket(tableId, session.user.id, server);
   sendSocket(server, {
     type: "table.snapshot",
-    table: safeJson(row.active_snapshot_json, {}),
+    table: publicTableForUser(safeJson(row.active_snapshot_json, {}), session.user.id),
     user_id: session.user.id,
   });
   broadcastTableMessage(
@@ -859,6 +862,50 @@ function createSeatSnapshot(seatIndex, user, deck, joinedAt) {
   };
 }
 
+function publicTableForUser(table = {}, viewerUserId = "") {
+  const next = cloneJson(table && typeof table === "object" ? table : {});
+  for (const seat of next.seats || []) {
+    for (const [zone, cards] of Object.entries(seat.zones || {})) {
+      if (!Array.isArray(cards)) continue;
+      seat.zones[zone] = cards.map((card, index) => publicCardForUser(card, seat, zone, viewerUserId, index));
+    }
+  }
+  return next;
+}
+
+function publicCardForUser(card = {}, seat = {}, zone = "", viewerUserId = "", index = 0) {
+  if (!shouldHideCard(card, seat, zone, viewerUserId)) return cloneJson(card);
+  return {
+    id: HIDDEN_CARD_ID,
+    instance_id: `hidden-${zoneName(zone) || "zone"}-${index + 1}`,
+    hidden: true,
+    hidden_zone: zoneName(zone),
+    ...(card.face_up === false ? { face_up: false } : {}),
+  };
+}
+
+function shouldHideCard(card = {}, seat = {}, zone = "", viewerUserId = "") {
+  const normalizedZone = zoneName(zone);
+  if (isHiddenCard(card)) return true;
+  if (secretDeckZones().has(normalizedZone)) return true;
+  if (normalizedZone === "hand" && seat.user_id !== viewerUserId) return true;
+  if (card.face_up === false && seat.user_id !== viewerUserId) return true;
+  return false;
+}
+
+function isHiddenCard(card) {
+  return Boolean(card?.hidden || card?.id === HIDDEN_CARD_ID);
+}
+
+function isPrivateCardZone(zone) {
+  const normalizedZone = zoneName(zone);
+  return secretDeckZones().has(normalizedZone) || normalizedZone === "hand";
+}
+
+function secretDeckZones() {
+  return new Set(["main_deck", "rune_deck"]);
+}
+
 function buildPlaygroundZones(deckJson = {}) {
   const zones = {
     main_deck: [],
@@ -894,17 +941,28 @@ function deckEntries(deckJson = {}) {
     .filter((entry) => entry.id && entry.quantity > 0);
 }
 
-function validatePlaygroundEvent(table, user, eventType) {
+function validatePlaygroundEvent(table, user, eventType, payload = {}) {
   if (eventType === "game.start") {
     if (hostUserId(table) !== user.id) return { status: 403, message: "Only the table host can start" };
     if ((table.seats || []).length < 2) return { status: 409, message: "Table needs two players" };
     if (table.status === "completed") return { status: 409, message: "Table is completed" };
     return null;
   }
+  const privateActionError = privateZoneActionError(table, user, eventType, payload);
+  if (privateActionError) return privateActionError;
   if (activePlaygroundEventTypes().has(eventType) && table.status !== "active") {
     return { status: 409, message: "Game has not started" };
   }
   return null;
+}
+
+function privateZoneActionError(table, user, eventType, payload = {}) {
+  if (!new Set(["card.move", "card.reveal", "card.flip"]).has(eventType)) return null;
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  if (!seat || seat.user_id === user.id) return null;
+  const zone = zoneName(eventType === "card.flip" ? payload.zone || "battlefield" : payload.from || "hand");
+  if (!isPrivateCardZone(zone)) return null;
+  return { status: 403, message: "Private zone requires owner" };
 }
 
 function hostUserId(table) {
@@ -1091,8 +1149,13 @@ function broadcastTableMessage(tableId, message, exceptUserId = "") {
   for (const entry of [...sockets]) {
     if (exceptUserId && entry.userId === exceptUserId) continue;
     if (message.target_user_id && message.target_user_id !== entry.userId) continue;
-    sendSocket(entry.socket, message);
+    sendSocket(entry.socket, publicPlaygroundMessageForUser(message, entry.userId));
   }
+}
+
+function publicPlaygroundMessageForUser(message, userId) {
+  if (!message?.table) return message;
+  return { ...message, table: publicTableForUser(message.table, userId) };
 }
 
 function sendSocket(socket, message) {
@@ -1294,6 +1357,10 @@ function safeJson(value, fallback) {
   } catch {
     return fallback;
   }
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
 }
 
 function safeName(value) {

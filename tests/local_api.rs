@@ -556,12 +556,60 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         4
     );
     assert_eq!(
+        started["table"]["seats"][0]["zones"]["hand"][0]["id"],
+        "OGN-001"
+    );
+    assert_eq!(
+        started["table"]["seats"][1]["zones"]["hand"][0]["id"],
+        "__hidden__"
+    );
+    assert_eq!(
+        started["table"]["seats"][1]["zones"]["hand"][0]["hidden"],
+        true
+    );
+    assert_eq!(
+        started["table"]["seats"][0]["zones"]["main_deck"][0]["id"],
+        "__hidden__"
+    );
+    assert_eq!(
         started["table"]["seats"][0]["zones"]["main_deck"]
             .as_array()
             .unwrap()
             .len(),
         1
     );
+
+    let guest_view = json(
+        request(
+            &app,
+            Method::GET,
+            &format!("/api/playground/tables/{table_id}"),
+            Some(&guest_cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        guest_view["table"]["seats"][0]["zones"]["hand"][0]["id"],
+        "__hidden__"
+    );
+    assert_eq!(
+        guest_view["table"]["seats"][1]["zones"]["hand"][0]["id"],
+        "OGN-001"
+    );
+
+    let opponent_hand_move = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"card.move","payload":{"seat_index":1,"from":"hand","to":"battlefield","count":1}}"#),
+    )
+    .await;
+    assert_eq!(opponent_hand_move.status(), StatusCode::FORBIDDEN);
 
     let move_card = request(
         &app,
@@ -737,8 +785,12 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         4
     );
     assert_eq!(
-        table["table"]["seats"][0]["zones"]["battlefield"][0]["instance_id"],
-        selected_instance
+        table["table"]["seats"][0]["zones"]["battlefield"][0]["id"],
+        "__hidden__"
+    );
+    assert_eq!(
+        table["table"]["seats"][0]["zones"]["battlefield"][0]["hidden"],
+        true
     );
     assert_eq!(
         table["table"]["seats"][0]["zones"]["battlefield"][0]["face_up"],
