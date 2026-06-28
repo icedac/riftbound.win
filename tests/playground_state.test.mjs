@@ -40,6 +40,8 @@ test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   assert.equal(table.id, "table-1");
   assert.equal(table.status, "waiting");
   assert.equal(table.victory_score, 8);
+  assert.equal(table.turn_phase, "setup");
+  assert.equal(table.turn_number, 0);
   assert.equal(table.seats[0].user_id, "user-host");
   assert.equal(table.seats[0].deck_name, "Ahri Tempo");
   assert.equal(table.seats[0].deck_snapshot.entries[0].quantity, 5);
@@ -99,6 +101,27 @@ test("battlefield claims mark control and battlefield scoring records the source
   assert.equal(table.seats[0].points, 1);
   assert.equal(replayTableEvents(table.events)[2].summary, "Score battlefield: +1");
   assert.equal(buildReplayFrames(table).at(-1).table.seats[0].zones.battlefields[0].controller_user_id, host.id);
+});
+
+test("turn phase events are logged and replayed", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+
+  assert.equal(table.turn_phase, "main");
+  assert.equal(table.turn_number, 1);
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.phase", payload: { phase: "score" }, now: 1300 });
+  assert.equal(table.turn_phase, "score");
+  assert.equal(table.phase_updated_at, 1300);
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 1400 });
+
+  assert.equal(table.turn_player_id, guest.id);
+  assert.equal(table.turn_phase, "main");
+  assert.equal(table.turn_number, 2);
+  assert.equal(replayTableEvents(table.events)[1].summary, "Turn phase: score");
+  assert.equal(buildReplayFrames(table).at(-1).table.turn_phase, "main");
 });
 
 test("player concession completes a table for the opponent", () => {

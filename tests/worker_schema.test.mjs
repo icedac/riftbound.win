@@ -944,6 +944,51 @@ test("worker records card exhaust state and readies channeled runes on new turns
   assert.equal(returned.table.seats[0].zones.rune_pool.find((card) => card.instance_id === selectedRune).exhausted, false);
 });
 
+test("worker records turn phase events in snapshots and logs", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  const start = await postPlaygroundEvent(env, table.id, "host-session", "game.start");
+  assert.equal(start.status, 201);
+  const started = await start.json();
+  assert.equal(started.table.turn_phase, "main");
+  assert.equal(started.table.turn_number, 1);
+
+  const phase = await postPlaygroundEvent(env, table.id, "host-session", "turn.phase", { phase: "score" });
+  assert.equal(phase.status, 201);
+  const phased = await phase.json();
+  assert.equal(phased.table.turn_phase, "score");
+  assert.equal(phased.table.phase_updated_at, phased.event.created_at);
+
+  const pass = await postPlaygroundEvent(env, table.id, "host-session", "turn.pass", {});
+  assert.equal(pass.status, 201);
+  const passed = await pass.json();
+  assert.equal(passed.table.turn_player_id, "guest-user");
+  assert.equal(passed.table.turn_phase, "main");
+  assert.equal(passed.table.turn_number, 2);
+  assert.equal(db.playgroundEvents.at(-2).event_type, "turn.phase");
+  assert.equal(db.playgroundEvents.at(-1).event_type, "turn.pass");
+});
+
 test("worker persists battlefield claim control and source scoring", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db);

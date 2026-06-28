@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Riftbound.kr Playground</title>
-    <link rel="stylesheet" href="/styles.css?v=20260628-playground5" />
+    <link rel="stylesheet" href="/styles.css?v=20260628-playground6" />
   </head>
   <body class="page-playground">
     <header class="site-header">
@@ -55,6 +55,18 @@
             <button id="scorePoint" type="button">Score Point</button>
             <button id="concedeGame" type="button">Concede</button>
             <button id="passTurn" type="button">Pass</button>
+            <label class="turn-phase-control">
+              Phase
+              <select id="turnPhaseSelect">
+                <option value="ready">Ready</option>
+                <option value="score">Score</option>
+                <option value="channel">Channel</option>
+                <option value="draw">Draw</option>
+                <option value="main">Main</option>
+                <option value="end">End</option>
+              </select>
+            </label>
+            <button id="setTurnPhase" type="button">Set Phase</button>
           </div>
         </div>
 
@@ -133,7 +145,7 @@
     </main>
 
     <script src="/brand.js?v=20260628-fixedbrand1" type="module"></script>
-    <script src="/playground.js?v=20260628-playground15" type="module"></script>
+    <script src="/playground.js?v=20260628-playground16" type="module"></script>
     <script src="/auth.js?v=20260628-readiness1" type="module"></script>
     <script src="/perf.js?v=20260628-perf2" type="module"></script>
   </body>

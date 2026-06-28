@@ -42,6 +42,8 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="scorePoint"',
     'id="concedeGame"',
     'id="eventLog"',
+    'id="turnPhaseSelect"',
+    'id="setTurnPhase"',
     'id="chatLog"',
     'id="voicePanel"',
     'id="remoteAudio"',
@@ -68,6 +70,8 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.match(js, /card\.flip/);
   assert.match(js, /card\.exhaust/);
   assert.match(js, /battlefield\.claim/);
+  assert.match(js, /turn\.phase/);
+  assert.match(js, /turn_phase/);
   assert.match(js, /WebSocket/);
   assert.match(js, /RTCPeerConnection/);
   assert.doesNotMatch(js, /localStorage/);

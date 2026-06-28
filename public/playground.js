@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground10";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground11";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -73,6 +73,8 @@ const els = {
   moveBattlefield: document.querySelector("#moveBattlefield"),
   scorePoint: document.querySelector("#scorePoint"),
   concedeGame: document.querySelector("#concedeGame"),
+  turnPhaseSelect: document.querySelector("#turnPhaseSelect"),
+  setTurnPhase: document.querySelector("#setTurnPhase"),
   selectedCardStatus: document.querySelector("#selectedCardStatus"),
   moveToZone: document.querySelector("#moveToZone"),
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
@@ -148,6 +150,7 @@ function bindEvents() {
   els.scorePoint.addEventListener("click", () => appendAction("score.point", scorePayload()));
   els.concedeGame.addEventListener("click", () => appendAction("player.concede", { user_id: currentUserId() }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
+  els.setTurnPhase.addEventListener("click", () => appendAction("turn.phase", { phase: els.turnPhaseSelect.value }));
   els.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = els.chatInput.value.trim();
@@ -536,10 +539,13 @@ function tableButton(table) {
 function renderTable() {
   const table = currentTable();
   const controlsDisabled = !table || !state.me || !currentSeat();
+  const phaseControlsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   els.startGame.disabled = !canStartTable(table);
   for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.concedeGame, els.passTurn, els.submitResult]) {
     control.disabled = !isTableActive(table) || controlsDisabled;
   }
+  els.turnPhaseSelect.disabled = phaseControlsDisabled;
+  els.setTurnPhase.disabled = phaseControlsDisabled;
   els.toggleVoice.disabled = controlsDisabled;
   for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard, els.claimBattlefield]) {
     control.disabled = !isTableActive(table) || controlsDisabled || !selectedCardRecord();
@@ -557,7 +563,10 @@ function renderTable() {
     resetReplay();
     return;
   }
-  els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)}`;
+  els.turnPhaseSelect.value = labelTurnPhaseValue(table.turn_phase);
+  els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)} · ${labelTurnPhase(
+    table.turn_phase
+  )} ${Number(table.turn_number || 0)}`;
   els.tableZones.replaceChildren(...orderedSeats(table).map(seatZones));
   renderSelectedCard();
   renderCardPreview();
@@ -626,7 +635,12 @@ function renderReplayFrame() {
   const frame = state.replayFrames[state.replayIndex];
   const table = frame.table || {};
   const replay = replayTableEvents(table.events || []);
-  const status = text("p", `${table.status || "waiting"} · turn ${playerName(table, table.turn_player_id)} · ${replay.length} event(s)`);
+  const status = text(
+    "p",
+    `${table.status || "waiting"} · turn ${playerName(table, table.turn_player_id)} · ${labelTurnPhase(table.turn_phase)} ${Number(
+      table.turn_number || 0
+    )} · ${replay.length} event(s)`
+  );
   const seats = (table.seats || []).map((seat) =>
     text(
       "p",
@@ -673,6 +687,10 @@ function canStartTable(table) {
 
 function isTableActive(table) {
   return table?.status === "active";
+}
+
+function isCurrentTurn(table) {
+  return table?.turn_player_id === currentUserId();
 }
 
 function selectedDeck() {
@@ -736,6 +754,7 @@ function eventSummary(event) {
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
   if (event.type === "battlefield.claim") return "battlefield claimed";
+  if (event.type === "turn.phase") return `phase ${labelTurnPhase(event.payload?.phase)}`;
   if (event.type === "score.point") return `${event.payload?.source === "battlefield" ? "score battlefield" : "score"} +${event.payload?.amount || 1}`;
   if (event.type === "player.concede") return "conceded";
   if (event.type === "turn.pass") return `pass to ${playerName(currentTable(), event.payload?.to_user_id)}`;
@@ -750,6 +769,15 @@ function tableIdFromPath() {
 
 function labelZone(key) {
   return key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function labelTurnPhaseValue(value) {
+  const phase = String(value || "main").replace(/-/g, "_").toLowerCase();
+  return ["ready", "score", "channel", "draw", "main", "end"].includes(phase) ? phase : "main";
+}
+
+function labelTurnPhase(value) {
+  return labelTurnPhaseValue(value).replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function selectedCardRecord(selected = state.selectedCard) {

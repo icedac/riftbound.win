@@ -1011,6 +1011,92 @@ async fn local_playground_turn_start_readies_channeled_runes() {
 }
 
 #[tokio::test]
+async fn local_playground_turn_phase_events_persist_in_snapshots() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Phase Deck").await;
+    let guest_deck = create_test_deck(&app, &guest_cookie, "Guest Phase Deck").await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+    assert_eq!(created["table"]["turn_phase"], "setup");
+    assert_eq!(created["table"]["turn_number"], 0);
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+    let started = json(start).await;
+    assert_eq!(started["table"]["turn_phase"], "main");
+    assert_eq!(started["table"]["turn_number"], 1);
+
+    let phase = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"turn.phase","payload":{"phase":"score"}}"#),
+    )
+    .await;
+    assert_eq!(phase.status(), StatusCode::CREATED);
+    let phased = json(phase).await;
+    assert_eq!(phased["table"]["turn_phase"], "score");
+    assert_eq!(
+        phased["table"]["phase_updated_at"],
+        phased["event"]["created_at"]
+    );
+
+    let pass = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"turn.pass","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(pass.status(), StatusCode::CREATED);
+    let passed = json(pass).await;
+    assert_eq!(passed["table"]["turn_phase"], "main");
+    assert_eq!(passed["table"]["turn_number"], 2);
+}
+
+#[tokio::test]
 async fn local_playground_battlefield_claim_scores_source_points() {
     let (app, _temp) = test_router();
     let host_cookie = login(&app, "google").await;

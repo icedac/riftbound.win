@@ -42,9 +42,8 @@ Playground implication:
 Playground implication:
 - `turn.pass` is valid as the coarse first version.
 - Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
-- Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes and draws 1.
+- Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.phase` records the current phase label (`ready`, `score`, `channel`, `draw`, `main`, or `end`) in snapshots, logs, and replay. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes, draws 1, increments `turn_number`, and returns `turn_phase` to `main`.
 - Battlefield control is modeled manually with `battlefield.claim`, which marks a public battlefield card with `controller_user_id`. Scoring from a selected battlefield sends `score.point` with `source: "battlefield"` and stores `last_scored_by` on that battlefield for logs and replay.
-- Later, replace the single pass button with phase/task buttons: ready/awaken, hold score, channel 2 runes, draw 1, main actions, end.
 - Store turn state on the table snapshot, not only in the event log, so replay can rebuild it deterministically.
 
 ## Core Actions To Model Next
@@ -74,11 +73,11 @@ Playground implication:
 
 Playground implication:
 - Keep mutual result confirmation as a correction/override path.
-- The next step is to add explicit phase windows and stronger battlefield legality checks around the current manual claim/score flow.
+- The next step is to add stronger battlefield legality checks around the current manual claim/score flow.
 
 ## Engine Backlog
 
-- Add explicit table phases and temporary rune/resource pool state separate from channeled rune cards.
+- Add temporary rune/resource pool state separate from channeled rune cards.
 - Add public/private/secret card masking.
 - Add automated battlefield scoring and control checks.
 - Add action legality for turn player, reactions, chain, and showdown state.

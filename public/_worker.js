@@ -11,6 +11,7 @@ const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const PLAYGROUND_VICTORY_SCORE = 8;
 const HIDDEN_CARD_ID = "__hidden__";
 const PLAYGROUND_SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
+const PLAYGROUND_TURN_PHASES = new Set(["ready", "score", "channel", "draw", "main", "end"]);
 const playgroundSockets = new Map();
 
 export default {
@@ -840,6 +841,9 @@ function createTableSnapshot(tableId, user, deck, now) {
     completed_at: null,
     victory_score: PLAYGROUND_VICTORY_SCORE,
     turn_player_id: user.id,
+    turn_phase: "setup",
+    turn_number: 0,
+    phase_updated_at: null,
     seats: [createSeatSnapshot(0, user, deck, now)],
     events: [],
     chat: [],
@@ -990,6 +994,7 @@ function activePlaygroundEventTypes() {
     "card.flip",
     "card.exhaust",
     "battlefield.claim",
+    "turn.phase",
     "turn.pass",
     "score.point",
     "result.propose",
@@ -998,7 +1003,7 @@ function activePlaygroundEventTypes() {
 }
 
 function turnScopedPlaygroundEventTypes() {
-  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "battlefield.claim", "turn.pass", "score.point"]);
+  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "battlefield.claim", "turn.phase", "turn.pass", "score.point"]);
 }
 
 function applyPlaygroundEvent(table, event) {
@@ -1008,15 +1013,22 @@ function applyPlaygroundEvent(table, event) {
     table.status = "active";
     table.started_at ||= event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats?.[0]?.user_id || "";
+    table.turn_phase = "main";
+    table.turn_number = Math.max(1, numericTurnNumber(table));
+    table.phase_updated_at = event.created_at;
   }
   if (event.type === "card.move") applyCardMove(table, event.payload);
   if (event.type === "card.reveal") applyCardReveal(table, event.payload);
   if (event.type === "card.flip") applyCardFlip(table, event.payload);
   if (event.type === "card.exhaust") applyCardExhaust(table, event.payload);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
+  if (event.type === "turn.phase") applyTurnPhase(table, event);
   if (event.type === "turn.pass") {
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
+    table.turn_phase = "main";
+    table.turn_number = Math.max(1, numericTurnNumber(table) + 1);
+    table.phase_updated_at = event.created_at;
   }
   if (event.type === "chat.message") {
     if (!Array.isArray(table.chat)) table.chat = [];
@@ -1115,6 +1127,21 @@ function applyBattlefieldClaim(table, event) {
   if (!battlefield) return;
   battlefield.controller_user_id = event.actor_id || "";
   battlefield.claimed_at = event.created_at;
+}
+
+function applyTurnPhase(table, event) {
+  table.turn_phase = normalizeTurnPhase(event.payload?.phase);
+  table.phase_updated_at = event.created_at;
+}
+
+function normalizeTurnPhase(value) {
+  const phase = zoneName(value);
+  return PLAYGROUND_TURN_PHASES.has(phase) ? phase : "main";
+}
+
+function numericTurnNumber(table) {
+  const number = Number(table.turn_number || 0);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function selectedCardIndex(cards = [], payload = {}) {
@@ -1225,6 +1252,7 @@ function validPlaygroundEventType(type) {
     "card.flip",
     "card.exhaust",
     "battlefield.claim",
+    "turn.phase",
     "turn.pass",
     "chat.message",
     "voice.presence",

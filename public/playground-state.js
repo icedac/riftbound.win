@@ -1,5 +1,6 @@
 const DEFAULT_NOW = () => Date.now();
 const VICTORY_SCORE = 8;
+const TURN_PHASES = new Set(["ready", "score", "channel", "draw", "main", "end"]);
 
 export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW(), cards = [] } = {}) {
   const tableId = id || randomId("table");
@@ -13,6 +14,9 @@ export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW()
     completed_at: null,
     victory_score: VICTORY_SCORE,
     turn_player_id: user?.id || "",
+    turn_phase: "setup",
+    turn_number: 0,
+    phase_updated_at: null,
     seats: [seat],
     events: [],
     chat: [],
@@ -145,6 +149,9 @@ function initialReplayTable(table = {}) {
     completed_at: null,
     victory_score: Number(table.victory_score || VICTORY_SCORE),
     turn_player_id: seats[0]?.user_id || table.turn_player_id || "",
+    turn_phase: "setup",
+    turn_number: 0,
+    phase_updated_at: null,
     seats,
     events: [],
     chat: [],
@@ -245,15 +252,22 @@ function applyEvent(table, event) {
     table.status = "active";
     table.started_at = table.started_at || event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats[0]?.user_id || "";
+    table.turn_phase = "main";
+    table.turn_number = Math.max(1, numericTurnNumber(table));
+    table.phase_updated_at = event.created_at;
   }
   if (event.type === "card.move") applyMove(table, event.payload);
   if (event.type === "card.reveal") applyReveal(table, event.payload);
   if (event.type === "card.flip") applyFlip(table, event.payload);
   if (event.type === "card.exhaust") applyExhaust(table, event.payload);
   if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
+  if (event.type === "turn.phase") applyTurnPhase(table, event);
   if (event.type === "turn.pass") {
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
+    table.turn_phase = "main";
+    table.turn_number = Math.max(1, numericTurnNumber(table) + 1);
+    table.phase_updated_at = event.created_at;
   }
   if (event.type === "chat.message") {
     table.chat.push({
@@ -314,6 +328,21 @@ function applyBattlefieldClaim(table, event) {
   if (!battlefield) return;
   battlefield.controller_user_id = event.actor_id || "";
   battlefield.claimed_at = event.created_at;
+}
+
+function applyTurnPhase(table, event) {
+  table.turn_phase = normalizeTurnPhase(event.payload?.phase);
+  table.phase_updated_at = event.created_at;
+}
+
+function normalizeTurnPhase(value) {
+  const phase = zoneName(value);
+  return TURN_PHASES.has(phase) ? phase : "main";
+}
+
+function numericTurnNumber(table) {
+  const number = Number(table.turn_number || 0);
+  return Number.isFinite(number) ? number : 0;
 }
 
 function markScoredBattlefield(table, payload = {}, scoringSeat, event) {
@@ -468,6 +497,7 @@ function eventSummary(event) {
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
   if (event.type === "battlefield.claim") return "Battlefield claimed";
+  if (event.type === "turn.phase") return `Turn phase: ${normalizeTurnPhase(event.payload?.phase)}`;
   if (event.type === "score.point") return `${event.payload?.source === "battlefield" ? "Score battlefield" : "Score point"}: +${scoreAmount(event.payload?.amount)}`;
   if (event.type === "player.concede") return "Player conceded";
   if (event.type === "turn.pass") return `Turn passed to ${event.payload.to_user_id || "next player"}`;

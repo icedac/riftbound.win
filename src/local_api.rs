@@ -1180,6 +1180,9 @@ fn create_table_snapshot(
         "completed_at": null,
         "victory_score": PLAYGROUND_VICTORY_SCORE,
         "turn_player_id": user.id,
+        "turn_phase": "setup",
+        "turn_number": 0,
+        "phase_updated_at": null,
         "seats": [create_seat_snapshot(0, user, deck, now)],
         "events": [],
         "chat": [],
@@ -1478,6 +1481,7 @@ fn active_playground_event_type(value: &str) -> bool {
             | "card.flip"
             | "card.exhaust"
             | "battlefield.claim"
+            | "turn.phase"
             | "turn.pass"
             | "score.point"
             | "result.propose"
@@ -1493,6 +1497,7 @@ fn turn_scoped_playground_event_type(value: &str) -> bool {
             | "card.flip"
             | "card.exhaust"
             | "battlefield.claim"
+            | "turn.phase"
             | "turn.pass"
             | "score.point"
     )
@@ -1514,6 +1519,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         {
             table["turn_player_id"] = json!(first_player);
         }
+        table["turn_phase"] = json!("main");
+        table["turn_number"] = json!(numeric_playground_turn_number(table).max(1));
+        table["phase_updated_at"] = event["created_at"].clone();
     }
     if event_type == "card.move" {
         apply_card_move(table, &event["payload"]);
@@ -1530,6 +1538,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     if event_type == "battlefield.claim" {
         apply_battlefield_claim(table, event);
     }
+    if event_type == "turn.phase" {
+        apply_turn_phase(table, event);
+    }
     if event_type == "turn.pass" {
         let to_user_id = event["payload"]
             .get("to_user_id")
@@ -1544,6 +1555,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
             .unwrap_or_default()
             .to_string();
         begin_playground_turn(table, &active_user_id);
+        table["turn_phase"] = json!("main");
+        table["turn_number"] = json!((numeric_playground_turn_number(table) + 1).max(1));
+        table["phase_updated_at"] = event["created_at"].clone();
     }
     if event_type == "chat.message" {
         let text = event["payload"]
@@ -1590,6 +1604,32 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         apply_result_proposal(table, event);
     }
     push_array_value(table, "events", event.clone());
+}
+
+fn apply_turn_phase(table: &mut Value, event: &Value) {
+    table["turn_phase"] = json!(normalize_turn_phase(
+        event["payload"].get("phase").and_then(Value::as_str)
+    ));
+    table["phase_updated_at"] = event["created_at"].clone();
+}
+
+fn normalize_turn_phase(value: Option<&str>) -> &'static str {
+    match zone_name(value.unwrap_or_default()).as_str() {
+        "ready" => "ready",
+        "score" => "score",
+        "channel" => "channel",
+        "draw" => "draw",
+        "main" => "main",
+        "end" => "end",
+        _ => "main",
+    }
+}
+
+fn numeric_playground_turn_number(table: &Value) -> i64 {
+    table
+        .get("turn_number")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
 }
 
 fn draw_opening_hands(table: &mut Value) {
@@ -2148,6 +2188,7 @@ fn valid_playground_event_type(value: &str) -> bool {
             | "card.flip"
             | "card.exhaust"
             | "battlefield.claim"
+            | "turn.phase"
             | "turn.pass"
             | "chat.message"
             | "voice.presence"
