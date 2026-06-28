@@ -70,9 +70,10 @@ D1 is required for profiles, linked auth, posts, and inline media fallback. R2 i
 
 If deploy logs say MEDIA binding is pending R2 setup:
 
-1. Confirm the Cloudflare token has R2 permissions.
-2. Re-run the Cloudflare Pages workflow.
-3. Confirm `wrangler.toml` receives a `MEDIA` binding during CI.
+1. Open Cloudflare dashboard > R2 Object Storage. If it shows "Get started with R2", the account still needs the "Add R2 subscription to my account" action before any R2 bucket or Pages binding can exist.
+2. Confirm the GitHub secret `CLOUDFLARE_API_TOKEN` has R2 write permissions.
+3. Re-run the Cloudflare Pages workflow.
+4. Confirm `wrangler.toml` receives a `MEDIA` binding during CI and `/api/me` reports `"store":"r2"`.
 
 ## Release Checklist
 

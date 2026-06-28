@@ -1,4 +1,4 @@
-import { filterAcceptedMediaFiles, mediaUploadConfig } from "/community-media.js?v=20260628-media";
+import { filterAcceptedMediaFiles, mediaUploadConfig } from "/community-media.js?v=20260628-r2state";
 
 const STORAGE_KEY = "riftbound.community.v2";
 const boardMeta = {

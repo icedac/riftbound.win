@@ -20,6 +20,7 @@ test("mediaUploadConfig uses Worker capability limits when present", () => {
   assert.equal(config.maxBytes, 1048576);
   assert.equal(config.maxFiles, 6);
   assert.match(config.label, /1 MB/);
+  assert.equal(config.detail, "Media: 1 MB per file until R2 subscription and binding are connected");
 });
 
 test("filterAcceptedMediaFiles rejects unsupported and oversized pasted files", () => {

@@ -33,7 +33,12 @@ OAuth production readiness requires:
 - `DB`: D1 database for users, posts, linked OAuth accounts, and small media fallback.
 - `MEDIA`: R2 bucket for pasted images, videos, and profile avatars.
 
-If R2 setup fails, production can still use D1 inline fallback for small media, but larger video/image uploads remain limited until R2 permissions are fixed.
+R2 production media requires two separate Cloudflare states:
+
+1. The account must have the R2 subscription enabled in the Cloudflare dashboard.
+2. `CLOUDFLARE_API_TOKEN` must include R2 write permissions so CI can create or reuse `riftbound-win-media` and write the `MEDIA` binding.
+
+If R2 setup fails, production can still use D1 inline fallback for small media, but larger video/image uploads remain limited until the R2 subscription and R2 write permissions are fixed.
 
 ## OAuth Callback URLs
 

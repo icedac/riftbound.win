@@ -67,6 +67,11 @@ store for larger images and videos; without it, production media uploads are
 limited to small inline D1 objects. The local Rust server does not need those
 Cloudflare bindings.
 
+If production `/api/me` reports `media.store` as `d1-inline`, enable the R2
+subscription in Cloudflare first, then update `CLOUDFLARE_API_TOKEN` with R2
+write permissions and redeploy. Until both are true, CI keeps the D1 binding and
+skips the `MEDIA` binding.
+
 ## Project Maintenance
 
 Operational rules and planning docs live in:

@@ -9,7 +9,7 @@ export function mediaUploadConfig(me = null) {
   const label = `Media: ${formatBytes(maxBytes)} per file`;
   const detail =
     store === "d1-inline"
-      ? `${label} until R2 is connected`
+      ? `${label} until R2 subscription and binding are connected`
       : store === "r2"
         ? `${label} via R2`
         : `${label} locally`;

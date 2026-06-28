@@ -52,6 +52,20 @@ class PrepareCloudflarePagesBackendTest(unittest.TestCase):
 
             self.assertEqual(module.configured_d1_database_id(), "existing-db-id")
 
+    def test_classifies_r2_subscription_errors(self):
+        module = load_module()
+
+        message = "R2 is not enabled for this account. Add R2 subscription to my account."
+
+        self.assertEqual(module.r2_setup_failure_reason(message), "R2 subscription is not enabled for this Cloudflare account.")
+
+    def test_classifies_r2_permission_errors(self):
+        module = load_module()
+
+        message = "Authentication error [code: 10000]: missing permission com.cloudflare.api.account.r2.write"
+
+        self.assertEqual(module.r2_setup_failure_reason(message), "Cloudflare API token is missing R2 write permissions.")
+
 
 if __name__ == "__main__":
     unittest.main()

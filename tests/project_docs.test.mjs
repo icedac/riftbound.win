@@ -13,7 +13,7 @@ const requiredDocs = [
   },
   {
     path: "../rules/deployment.md",
-    patterns: [/CLOUDFLARE_ACCOUNT_ID/, /CLOUDFLARE_API_TOKEN/, /GOOGLE_CLIENT_ID/, /R2/],
+    patterns: [/CLOUDFLARE_ACCOUNT_ID/, /CLOUDFLARE_API_TOKEN/, /GOOGLE_CLIENT_ID/, /R2 subscription/, /R2 write/],
   },
   {
     path: "../rules/packaging.md",
@@ -21,7 +21,7 @@ const requiredDocs = [
   },
   {
     path: "../docs/operations/maintenance.md",
-    patterns: [/daily maintenance/i, /OAuth/, /D1/, /Cloudflare Pages/],
+    patterns: [/daily maintenance/i, /OAuth/, /D1/, /Cloudflare Pages/, /Add R2 subscription/],
   },
   {
     path: "../docs/prd/playground.md",

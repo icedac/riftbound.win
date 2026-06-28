@@ -66,16 +66,27 @@ def configured_d1_database_id():
 
 def ensure_r2_bucket():
     result = run(f"r2 bucket create {quote(R2_BUCKET)}", allow_failure=True)
-    output = f"{result.stdout}\n{result.stderr}".lower()
+    output = f"{result.stdout}\n{result.stderr}"
+    normalized = output.lower()
     if result.returncode == 0:
         print(f"Created R2 bucket {R2_BUCKET}.")
         return
-    if "already exists" in output or "already own" in output or "bucket_exists" in output:
+    if "already exists" in normalized or "already own" in normalized or "bucket_exists" in normalized:
         print(f"R2 bucket {R2_BUCKET} already exists.")
         return
+    print(f"R2 setup reason: {r2_setup_failure_reason(output)}")
     sys.stderr.write(result.stdout)
     sys.stderr.write(result.stderr)
     raise SystemExit(result.returncode)
+
+
+def r2_setup_failure_reason(output):
+    normalized = str(output or "").lower()
+    if "subscription" in normalized or "not enabled" in normalized or "r2 is not enabled" in normalized:
+        return "R2 subscription is not enabled for this Cloudflare account."
+    if "permission" in normalized or "not authorized" in normalized or "authentication error" in normalized:
+        return "Cloudflare API token is missing R2 write permissions."
+    return "R2 bucket setup failed for an unknown Cloudflare response."
 
 
 def write_bindings(database_id, *, include_r2=True):
