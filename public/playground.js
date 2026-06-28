@@ -70,6 +70,7 @@ const els = {
   remoteAudio: document.querySelector("#remoteAudio"),
   toggleVoice: document.querySelector("#toggleVoice"),
   resultSelect: document.querySelector("#resultSelect"),
+  resultStatus: document.querySelector("#resultStatus"),
   submitResult: document.querySelector("#submitResult"),
   replayLog: document.querySelector("#replayLog"),
   buildReplay: document.querySelector("#buildReplay"),
@@ -677,6 +678,7 @@ function renderTable() {
     els.chatLog.replaceChildren();
     renderSelectedCard();
     renderCardPreview();
+    renderResultStatus(null);
     els.voiceStatus.textContent = "Mic idle";
     renderShowdownWinnerOptions(null);
     resetReplay();
@@ -690,6 +692,7 @@ function renderTable() {
   els.tableZones.replaceChildren(...orderedSeats(table).map(seatZones));
   renderSelectedCard();
   renderCardPreview();
+  renderResultStatus(table);
   els.eventLog.replaceChildren(...(table.events || []).slice().reverse().map(eventNode));
   els.chatLog.replaceChildren(...(table.chat || []).map((chat) => text("p", `${playerName(table, chat.user_id)}: ${chat.text}`)));
   const voice = table.voice?.[currentUserId()];
@@ -778,6 +781,26 @@ function renderReplayFrame() {
   els.replayPrev.disabled = state.replayIndex <= 0;
   els.replayNext.disabled = state.replayIndex >= state.replayFrames.length - 1;
   els.replayLog.replaceChildren(status, ...seats, ...events);
+}
+
+function renderResultStatus(table) {
+  if (!els.resultStatus) return;
+  if (!table) {
+    els.resultStatus.replaceChildren(empty("Select a table to track result proposals."));
+    return;
+  }
+  const result = table.result || {};
+  const proposals = result.proposals || {};
+  const final = result.final ? `Final: ${resultLabel(result.final)}` : "Final: pending agreement";
+  const rows = (table.seats || []).map((seat) => text("p", `${seat.display_name || "Player"}: ${resultLabel(proposals[seat.user_id])}`));
+  els.resultStatus.replaceChildren(text("strong", final), ...rows);
+}
+
+function resultLabel(value) {
+  if (value === "host-win") return "Host win";
+  if (value === "guest-win") return "Guest win";
+  if (value === "draw") return "Draw";
+  return "No proposal";
 }
 
 function currentTable() {
