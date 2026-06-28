@@ -40,6 +40,7 @@ Playground implication:
 
 Playground implication:
 - `turn.pass` is valid as the coarse first version.
+- Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
 - Later, replace the single pass button with phase/task buttons: ready, hold score, channel 2 runes, draw 1, main actions, end.
 - Store turn state on the table snapshot, not only in the event log, so replay can rebuild it deterministically.
 
@@ -63,6 +64,7 @@ Playground implication:
 - The current Playground snapshot stores `victory_score: 8` for the default duel setup.
 - `score.point` adds points to a player. If that player is at or above `victory_score` and has more points than every opponent, the table completes automatically and records that player as the winner.
 - The app also records a mutually agreed result with `result.propose` and completes when both players choose the same result.
+- A player can concede with `player.concede`; the opponent is recorded as `winner_user_id`, the conceding player is recorded as `conceded_user_id`, and the event remains in the replay log.
 
 Playground implication:
 - Keep mutual result confirmation as a correction/override path.

@@ -1,4 +1,4 @@
-import { replayTableEvents } from "/playground-state.js?v=20260628-playground6";
+import { replayTableEvents } from "/playground-state.js?v=20260628-playground7";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -67,6 +67,7 @@ const els = {
   revealCard: document.querySelector("#revealCard"),
   moveBattlefield: document.querySelector("#moveBattlefield"),
   scorePoint: document.querySelector("#scorePoint"),
+  concedeGame: document.querySelector("#concedeGame"),
   selectedCardStatus: document.querySelector("#selectedCardStatus"),
   moveToZone: document.querySelector("#moveToZone"),
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
@@ -135,6 +136,7 @@ function bindEvents() {
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
   els.scorePoint.addEventListener("click", () => appendAction("score.point", { amount: 1, source: "manual" }));
+  els.concedeGame.addEventListener("click", () => appendAction("player.concede", { user_id: currentUserId() }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
   els.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -490,7 +492,7 @@ function renderTable() {
   const table = currentTable();
   const controlsDisabled = !table || !state.me || !currentSeat();
   els.startGame.disabled = !canStartTable(table);
-  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.passTurn, els.submitResult]) {
+  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.concedeGame, els.passTurn, els.submitResult]) {
     control.disabled = !isTableActive(table) || controlsDisabled;
   }
   els.toggleVoice.disabled = controlsDisabled;
@@ -640,6 +642,7 @@ function eventSummary(event) {
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
   if (event.type === "score.point") return `score +${event.payload?.amount || 1}`;
+  if (event.type === "player.concede") return "conceded";
   if (event.type === "turn.pass") return `pass to ${playerName(currentTable(), event.payload?.to_user_id)}`;
   if (event.type === "result.propose") return `result ${event.payload?.result || ""}`;
   return event.type || "event";

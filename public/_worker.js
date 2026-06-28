@@ -964,6 +964,9 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
   if (activePlaygroundEventTypes().has(eventType) && table.status !== "active") {
     return { status: 409, message: "Game has not started" };
   }
+  if (turnScopedPlaygroundEventTypes().has(eventType) && table.turn_player_id !== user.id) {
+    return { status: 403, message: "Not your turn" };
+  }
   return null;
 }
 
@@ -982,6 +985,10 @@ function hostUserId(table) {
 
 function activePlaygroundEventTypes() {
   return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "score.point", "result.propose", "player.concede"]);
+}
+
+function turnScopedPlaygroundEventTypes() {
+  return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "score.point"]);
 }
 
 function applyPlaygroundEvent(table, event) {
@@ -1017,6 +1024,7 @@ function applyPlaygroundEvent(table, event) {
     };
   }
   if (event.type === "score.point") applyScorePoint(table, event);
+  if (event.type === "player.concede") applyPlayerConcede(table, event);
   if (event.type === "result.propose") applyResultProposal(table, event);
   table.events.push(event);
 }
@@ -1088,6 +1096,17 @@ function applyResultProposal(table, event) {
     table.completed_at = event.created_at;
     table.result.final = proposals[0];
   }
+}
+
+function applyPlayerConcede(table, event) {
+  const winner = (table.seats || []).find((seat) => seat.user_id !== event.actor_id);
+  if (!winner) return;
+  table.result ||= { proposals: {}, final: "" };
+  table.status = "completed";
+  table.completed_at = event.created_at;
+  table.result.final = resultForSeat(table, winner);
+  table.result.winner_user_id = winner.user_id;
+  table.result.conceded_user_id = event.actor_id;
 }
 
 function applyScorePoint(table, event) {

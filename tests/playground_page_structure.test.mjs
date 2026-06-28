@@ -38,6 +38,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'value="legend_zone"',
     'value="battlefields"',
     'id="scorePoint"',
+    'id="concedeGame"',
     'id="eventLog"',
     'id="chatLog"',
     'id="voicePanel"',
@@ -90,6 +91,8 @@ test("playground exposes point scoring controls and summaries", async () => {
 
   assert.match(js, /score\.point/);
   assert.match(js, /els\.scorePoint/);
+  assert.match(js, /player\.concede/);
+  assert.match(js, /els\.concedeGame/);
   assert.match(js, /points \|\| 0/);
 });
 

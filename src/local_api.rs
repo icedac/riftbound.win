@@ -683,6 +683,11 @@ async fn append_playground_event(
             Json(json!({ "error": "Private zone requires owner" })),
         )
             .into_response(),
+        Err(error) if error.to_string().contains("Not your turn") => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Not your turn" })),
+        )
+            .into_response(),
         Err(error) if error.to_string().contains("Table needs two players") => (
             StatusCode::CONFLICT,
             Json(json!({ "error": "Table needs two players" })),
@@ -1400,6 +1405,11 @@ fn validate_playground_event(
     {
         anyhow::bail!("Game has not started");
     }
+    if turn_scoped_playground_event_type(event_type)
+        && table.get("turn_player_id").and_then(Value::as_str) != Some(user.id.as_str())
+    {
+        anyhow::bail!("Not your turn");
+    }
     Ok(())
 }
 
@@ -1467,6 +1477,13 @@ fn active_playground_event_type(value: &str) -> bool {
             | "score.point"
             | "result.propose"
             | "player.concede"
+    )
+}
+
+fn turn_scoped_playground_event_type(value: &str) -> bool {
+    matches!(
+        value,
+        "card.move" | "card.reveal" | "card.flip" | "turn.pass" | "score.point"
     )
 }
 
@@ -1548,6 +1565,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     }
     if event_type == "score.point" {
         apply_score_point(table, event);
+    }
+    if event_type == "player.concede" {
+        apply_player_concede(table, event);
     }
     if event_type == "result.propose" {
         apply_result_proposal(table, event);
@@ -1803,6 +1823,35 @@ fn apply_result_proposal(table: &mut Value, event: &Value) {
             table["result"]["final"] = json!(final_result);
         }
     }
+}
+
+fn apply_player_concede(table: &mut Value, event: &Value) {
+    let actor = event["actor_id"].as_str().unwrap_or_default();
+    let seats = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let Some((winner_index, winner_seat)) = seats
+        .iter()
+        .enumerate()
+        .find(|(_, seat)| seat.get("user_id").and_then(Value::as_str) != Some(actor))
+    else {
+        return;
+    };
+    let winner_user_id = winner_seat
+        .get("user_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if !table.get("result").is_some_and(Value::is_object) {
+        table["result"] = json!({ "proposals": {}, "final": "" });
+    }
+    table["status"] = json!("completed");
+    table["completed_at"] = event["created_at"].clone();
+    table["result"]["final"] = json!(result_for_seat(winner_index, &winner_user_id));
+    table["result"]["winner_user_id"] = json!(winner_user_id);
+    table["result"]["conceded_user_id"] = json!(actor);
 }
 
 fn apply_score_point(table: &mut Value, event: &Value) {

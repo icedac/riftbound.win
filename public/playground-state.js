@@ -188,6 +188,7 @@ function applyEvent(table, event) {
     };
   }
   if (event.type === "score.point") applyScorePoint(table, event);
+  if (event.type === "player.concede") applyPlayerConcede(table, event);
   if (event.type === "result.propose") {
     table.result ||= { proposals: {}, final: "" };
     table.result.proposals ||= {};
@@ -199,6 +200,17 @@ function applyEvent(table, event) {
       table.result.final = proposals[0];
     }
   }
+}
+
+function applyPlayerConcede(table, event) {
+  const winner = (table.seats || []).find((seat) => seat.user_id !== event.actor_id);
+  if (!winner) return;
+  table.result ||= { proposals: {}, final: "" };
+  table.status = "completed";
+  table.completed_at = event.created_at;
+  table.result.final = resultForSeat(table, winner);
+  table.result.winner_user_id = winner.user_id;
+  table.result.conceded_user_id = event.actor_id;
 }
 
 function applyScorePoint(table, event) {
@@ -320,6 +332,7 @@ function eventSummary(event) {
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
   if (event.type === "score.point") return `Score point: +${scoreAmount(event.payload?.amount)}`;
+  if (event.type === "player.concede") return "Player conceded";
   if (event.type === "turn.pass") return `Turn passed to ${event.payload.to_user_id || "next player"}`;
   if (event.type === "result.propose") return `Result proposed: ${event.payload.result || "unknown"}`;
   return event.type || "unknown";

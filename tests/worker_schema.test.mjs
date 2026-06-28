@@ -701,6 +701,16 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(guestVisible.table.seats[0].zones.hand[0].id, "__hidden__");
   assert.equal(guestVisible.table.seats[1].zones.hand[0].id, "OGN-002");
 
+  const guestOutOfTurnMove = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ type: "card.move", payload: { seat_index: 1, from: "hand", to: "battlefield", count: 1 } }),
+    }),
+    env
+  );
+  assert.equal(guestOutOfTurnMove.status, 403);
+
   const opponentHandMove = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
       method: "POST",
@@ -781,7 +791,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const scorePoint = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
       body: JSON.stringify({ type: "score.point", payload: { amount: 8, source: "hold" } }),
     }),
     env
@@ -789,10 +799,10 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(scorePoint.status, 201);
   const scored = await scorePoint.json();
   assert.equal(scored.event.sequence, 6);
-  assert.equal(scored.table.seats[0].points, 8);
+  assert.equal(scored.table.seats[1].points, 8);
   assert.equal(scored.table.status, "completed");
-  assert.equal(scored.table.result.final, "host-win");
-  assert.equal(scored.table.result.winner_user_id, "host-user");
+  assert.equal(scored.table.result.final, "guest-win");
+  assert.equal(scored.table.result.winner_user_id, "guest-user");
 
   const events = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events?after=0`, {
@@ -806,4 +816,98 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(eventList.events[3].type, "card.flip");
   assert.equal(eventList.events[4].type, "turn.pass");
   assert.equal(eventList.events[5].type, "score.point");
+});
+
+test("worker completes playground tables when a player concedes", async () => {
+  const db = new InMemoryD1Database();
+  const now = Date.now();
+  db.users.push(
+    {
+      id: "host-user",
+      display_name: "Host",
+      bio: "",
+      avatar_key: "",
+      avatar_type: "",
+      avatar_data: "",
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "guest-user",
+      display_name: "Guest",
+      bio: "",
+      avatar_key: "",
+      avatar_type: "",
+      avatar_data: "",
+      created_at: now,
+      updated_at: now,
+    }
+  );
+  db.sessions.push(
+    { id: "host-session", user_id: "host-user", expires_at: now + 60_000 },
+    { id: "guest-session", user_id: "guest-user", expires_at: now + 60_000 }
+  );
+  db.savedDecks.push(
+    {
+      id: "host-deck",
+      user_id: "host-user",
+      name: "Host Deck",
+      format: "constructed",
+      deck_json: JSON.stringify({ main: [{ id: "OGN-001", quantity: 5 }], runes: [{ id: "OGN-R01", quantity: 2 }] }),
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "guest-deck",
+      user_id: "guest-user",
+      name: "Guest Deck",
+      format: "constructed",
+      deck_json: JSON.stringify({ main: [{ id: "OGN-002", quantity: 5 }], runes: [{ id: "OGN-R02", quantity: 2 }] }),
+      created_at: now,
+      updated_at: now,
+    }
+  );
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "game.start", payload: {} }),
+    }),
+    env
+  );
+  const concede = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ type: "player.concede", payload: {} }),
+    }),
+    env
+  );
+
+  assert.equal(concede.status, 201);
+  const conceded = await concede.json();
+  assert.equal(conceded.event.sequence, 2);
+  assert.equal(conceded.table.status, "completed");
+  assert.equal(conceded.table.result.final, "host-win");
+  assert.equal(conceded.table.result.winner_user_id, "host-user");
 });

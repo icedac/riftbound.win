@@ -459,10 +459,6 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     assert_eq!(create.status(), StatusCode::CREATED);
     let created = json(create).await;
     let table_id = created["table"]["id"].as_str().expect("table id");
-    let host_user_id = created["table"]["seats"][0]["user_id"]
-        .as_str()
-        .expect("host user id")
-        .to_string();
     assert_eq!(created["table"]["status"], "waiting");
     assert_eq!(created["table"]["victory_score"], 8);
     assert_eq!(created["table"]["seats"].as_array().unwrap().len(), 1);
@@ -620,6 +616,17 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         "OGN-001"
     );
 
+    let guest_out_of_turn_move = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"card.move","payload":{"seat_index":1,"from":"hand","to":"battlefield","count":1}}"#),
+    )
+    .await;
+    assert_eq!(guest_out_of_turn_move.status(), StatusCode::FORBIDDEN);
+
     let opponent_hand_move = request(
         &app,
         Method::POST,
@@ -753,7 +760,7 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         &app,
         Method::POST,
         &format!("/api/playground/tables/{table_id}/events"),
-        Some(&host_cookie),
+        Some(&guest_cookie),
         Some("application/json"),
         Body::from(r#"{"type":"score.point","payload":{"amount":8,"source":"hold"}}"#),
     )
@@ -761,10 +768,10 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     assert_eq!(score_point.status(), StatusCode::CREATED);
     let scored = json(score_point).await;
     assert_eq!(scored["event"]["sequence"], 6);
-    assert_eq!(scored["table"]["seats"][0]["points"], 8);
+    assert_eq!(scored["table"]["seats"][1]["points"], 8);
     assert_eq!(scored["table"]["status"], "completed");
-    assert_eq!(scored["table"]["result"]["final"], "host-win");
-    assert_eq!(scored["table"]["result"]["winner_user_id"], host_user_id);
+    assert_eq!(scored["table"]["result"]["final"], "guest-win");
+    assert_eq!(scored["table"]["result"]["winner_user_id"], guest_user_id);
 
     let events = json(
         request(
@@ -816,4 +823,75 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         table["table"]["seats"][0]["zones"]["battlefield"][0]["face_up"],
         false
     );
+}
+
+#[tokio::test]
+async fn local_playground_concede_completes_table_for_the_opponent() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Concede Deck").await;
+    let guest_deck = create_test_deck(&app, &guest_cookie, "Guest Concede Deck").await;
+
+    let created = json(
+        request(
+            &app,
+            Method::POST,
+            "/api/playground/tables",
+            Some(&host_cookie),
+            Some("application/json"),
+            Body::from(format!(
+                r#"{{"deck_id":"{}"}}"#,
+                host_deck["id"].as_str().unwrap()
+            )),
+        )
+        .await,
+    )
+    .await;
+    let table_id = created["table"]["id"].as_str().expect("table id");
+    let host_user_id = created["table"]["seats"][0]["user_id"]
+        .as_str()
+        .expect("host user id")
+        .to_string();
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+
+    let concede = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"player.concede","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(concede.status(), StatusCode::CREATED);
+    let conceded = json(concede).await;
+    assert_eq!(conceded["event"]["sequence"], 2);
+    assert_eq!(conceded["table"]["status"], "completed");
+    assert_eq!(conceded["table"]["result"]["final"], "host-win");
+    assert_eq!(conceded["table"]["result"]["winner_user_id"], host_user_id);
 }

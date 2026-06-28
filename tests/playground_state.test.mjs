@@ -68,6 +68,19 @@ test("score point normalizes invalid amounts to one point", () => {
   assert.equal(replayTableEvents(table.events)[0].summary, "Score point: +1");
 });
 
+test("player concession completes a table for the opponent", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  table = appendTableEvent(table, { actorId: guest.id, type: "player.concede", payload: {}, now: 1300 });
+
+  assert.equal(table.status, "completed");
+  assert.equal(table.completed_at, 1300);
+  assert.equal(table.result.final, "host-win");
+  assert.equal(table.result.winner_user_id, host.id);
+  assert.equal(replayTableEvents(table.events)[1].summary, "Player conceded");
+});
+
 test("joined tables append ordered events, preserve chat and voice state, and replay the log", () => {
   let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
   table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
