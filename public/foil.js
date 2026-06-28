@@ -5,15 +5,21 @@ const DEFAULTS = {
 };
 
 export function appendFoilLayers(parent, options = {}) {
-  if (!parent || parent.querySelector(":scope > .foil-spectrum")) return;
+  if (!parent || parent.querySelector(":scope > .foil-layer")) return;
   const variant = options.variant || "rift";
   parent.classList.add("foil-surface", `foil-${variant}`);
+  if (options.compact) parent.classList.add("foil-compact");
   if (options.premium) parent.classList.add("foil-premium");
-  for (const className of ["foil-spectrum", "foil-sparkle", "foil-glare"]) {
+  for (const className of foilLayerClasses(options)) {
     const layer = document.createElement("div");
     layer.className = `foil-layer ${className}`;
     parent.append(layer);
   }
+}
+
+export function foilLayerClasses(options = {}) {
+  if (options.compact) return ["foil-wash"];
+  return options.sparkle ? ["foil-spectrum", "foil-sparkle", "foil-glare"] : ["foil-spectrum", "foil-glare"];
 }
 
 export function bindFoilSurface(surface, options = {}) {
@@ -47,8 +53,10 @@ export function bindFoilSurface(surface, options = {}) {
     surface.style.setProperty("--background-x", `${backgroundX.toFixed(2)}%`);
     surface.style.setProperty("--background-y", `${backgroundY.toFixed(2)}%`);
     surface.style.setProperty("--card-opacity", String(config.intensity));
-    surface.style.setProperty("--foil-rotate-x", `${((50 - y) / config.tilt).toFixed(2)}deg`);
-    surface.style.setProperty("--foil-rotate-y", `${((x - 50) / config.tilt).toFixed(2)}deg`);
+    if (!config.compact) {
+      surface.style.setProperty("--foil-rotate-x", `${((50 - y) / config.tilt).toFixed(2)}deg`);
+      surface.style.setProperty("--foil-rotate-y", `${((x - 50) / config.tilt).toFixed(2)}deg`);
+    }
   };
 
   surface.addEventListener("pointermove", (event) => {
@@ -83,6 +91,7 @@ export function setupFoils(root = document) {
     appendFoilLayers(surface, {
       premium: surface.classList.contains("foil-premium"),
       variant: surface.dataset.foilVariant || "rift",
+      sparkle: surface.classList.contains("foil-hero"),
     });
     bindFoilSurface(surface, {
       intensity: surface.classList.contains("foil-premium") ? 1 : 0.82,

@@ -44,6 +44,15 @@ test("cards app cache-busts its module imports", async () => {
   }
 });
 
+test("foil helper imports are cache-busted wherever foil rendering is used", async () => {
+  for (const path of ["../public/app.js", "../public/decks.js", "../public/landing.js"]) {
+    const source = await readFile(new URL(path, import.meta.url), "utf8");
+
+    assert.match(source, /from "\/foil\.js\?v=[^"]+"/, path);
+    assert.doesNotMatch(source, /from "\/foil\.js"/, path);
+  }
+});
+
 test("community app cache-busts media helper import", async () => {
   const source = await readFile(new URL("../public/community.js", import.meta.url), "utf8");
 

@@ -9,7 +9,7 @@ import {
   summarizeDeck,
   validateRiftboundDeck,
 } from "/deck-utils.js";
-import { appendFoilLayers, bindFoilSurface } from "/foil.js";
+import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 
 const STORAGE_KEY = "riftbound.deck.v2";
 const RESULT_LIMIT = 80;
@@ -425,8 +425,9 @@ function cardImage(card, className) {
   image.alt = card?.name || "";
   wrap.append(image);
   if (card?.has_foil) {
-    appendFoilLayers(wrap, { premium: !card.has_normal || card.rarity === "Showcase" });
-    bindFoilSurface(wrap, { intensity: className === "card-preview-image" ? 0.82 : 0.48, tilt: 6 });
+    const compact = className !== "card-preview-image";
+    appendFoilLayers(wrap, { premium: !card.has_normal || card.rarity === "Showcase", compact });
+    bindFoilSurface(wrap, { intensity: compact ? 0.34 : 0.82, tilt: compact ? 7.4 : 6, compact });
   }
   return wrap;
 }

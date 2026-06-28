@@ -4,16 +4,20 @@ import { readFile } from "node:fs/promises";
 
 const css = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
 
-test("foil spectrum uses broad color wash instead of repeating stripe gradients", () => {
-  const block = cssBlock(".foil-spectrum");
+test("compact foil wash uses soft radial light instead of stripe gradients", () => {
+  const block = cssBlock(".foil-wash");
 
-  assert.match(block, /conic-gradient/);
-  assert.doesNotMatch(block, /repeating-linear-gradient/);
+  assert.match(block, /radial-gradient/);
+  assert.doesNotMatch(block, /(?:repeating-)?linear-gradient/);
+  assert.doesNotMatch(block, /conic-gradient/);
 });
 
-test("foil CSS avoids repeating stripe gradients across all foil layers", () => {
-  for (const block of css.matchAll(/(?:^|\n)\.foil[\s\S]*?\n}/g)) {
-    assert.doesNotMatch(block[0], /repeating-linear-gradient/);
+test("foil visual layers avoid banded gradient families", () => {
+  for (const selector of [".foil-wash", ".foil-spectrum", ".foil-glare"]) {
+    const block = cssBlock(selector);
+
+    assert.doesNotMatch(block, /(?:repeating-)?linear-gradient/, selector);
+    assert.doesNotMatch(block, /conic-gradient/, selector);
   }
 });
 

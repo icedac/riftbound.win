@@ -1,4 +1,4 @@
-import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-cardboot3";
+import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 import { filterCards, normalizeSearch, resolveInitialCardFilters } from "/card-filter-state.js?v=20260628-cardboot3";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardboot3";
 
@@ -235,8 +235,8 @@ function cardNode(card) {
   image.alt = card.name;
   imageWrap.append(image);
   if (card.has_foil) {
-    appendFoilLayers(imageWrap, { premium: isPremiumFoil(card) });
-    bindFoilSurface(imageWrap, { intensity: isPremiumFoil(card) ? 1 : 0.82, tilt: 5.2 });
+    appendFoilLayers(imageWrap, { premium: isPremiumFoil(card), compact: true });
+    bindFoilSurface(imageWrap, { intensity: isPremiumFoil(card) ? 0.54 : 0.38, tilt: 7.4, compact: true });
   }
 
   const body = div("card-body");

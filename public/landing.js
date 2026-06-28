@@ -1,4 +1,4 @@
-import { appendFoilLayers, bindFoilSurface } from "/foil.js";
+import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 
 const featuredAhriId = "OGN-066-P";
 const supportingIds = ["OGN-255-P", "OGN-066a", "OGN-303-STAR", "SFD-227-STAR"];

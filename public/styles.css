@@ -647,11 +647,15 @@ label {
 }
 
 .foil-surface.is-foil-active .foil-spectrum {
-  opacity: calc(0.16 + (var(--card-opacity) * 0.42));
+  opacity: calc(0.11 + (var(--card-opacity) * 0.28));
 }
 
 .foil-surface.is-foil-active .foil-glare {
-  opacity: calc(0.08 + (var(--card-opacity) * 0.24));
+  opacity: calc(0.06 + (var(--card-opacity) * 0.18));
+}
+
+.foil-compact.is-foil-active .foil-wash {
+  opacity: calc(0.08 + (var(--card-opacity) * 0.18));
 }
 
 .foil-layer {
@@ -662,43 +666,51 @@ label {
   pointer-events: none;
   transform: translateZ(1px);
   transition:
-    opacity 170ms ease,
-    background-position 130ms ease;
+    opacity 150ms ease,
+    background-position 100ms ease;
+}
+
+.foil-compact .foil-layer {
+  transform: translateZ(0);
+  transition: opacity 120ms ease;
+}
+
+.foil-wash {
+  z-index: 2;
+  opacity: calc(0.035 + (var(--card-opacity) * 0.1));
+  background-image:
+    radial-gradient(
+      farthest-corner circle at var(--pointer-x) var(--pointer-y),
+      rgb(255 255 255 / 28%) 0%,
+      rgb(255 255 255 / 8%) 24%,
+      transparent 56%
+    ),
+    radial-gradient(circle at 18% 20%, rgb(94 222 255 / 20%) 0%, transparent 48%),
+    radial-gradient(circle at 86% 30%, rgb(255 128 232 / 18%) 0%, transparent 46%),
+    radial-gradient(circle at 46% 88%, rgb(255 220 110 / 16%) 0%, transparent 54%);
+  background-size: cover;
+  background-position: center;
+  mix-blend-mode: screen;
 }
 
 .foil-spectrum {
   z-index: 2;
-  opacity: calc(0.08 + (var(--card-opacity) * 0.24));
+  opacity: calc(0.055 + (var(--card-opacity) * 0.18));
   background-image:
-    conic-gradient(
-      from calc((var(--pointer-from-left) * 110deg) + 18deg) at var(--pointer-x) var(--pointer-y),
-      hsl(44 100% 72% / 0%) 0deg,
-      hsl(51 100% 72% / 44%) 42deg,
-      hsl(160 100% 69% / 34%) 102deg,
-      hsl(196 100% 72% / 44%) 164deg,
-      hsl(258 100% 76% / 36%) 228deg,
-      hsl(322 100% 74% / 42%) 294deg,
-      hsl(44 100% 72% / 0%) 360deg
-    ),
     radial-gradient(
-      farthest-corner circle at calc(var(--pointer-x) * 0.75) calc(var(--pointer-y) * 0.82),
-      rgb(255 255 255 / 38%) 0%,
-      rgb(255 255 255 / 9%) 32%,
-      rgb(0 0 0 / 18%) 92%
+      farthest-corner circle at calc(var(--pointer-x) * 0.78) calc(var(--pointer-y) * 0.84),
+      rgb(255 246 186 / 28%) 0%,
+      rgb(255 246 186 / 8%) 30%,
+      transparent 66%
     ),
-    linear-gradient(
-      128deg,
-      transparent 18%,
-      rgb(255 255 255 / 20%) 44%,
-      rgb(255 245 179 / 18%) 50%,
-      transparent 72%
-    );
-  background-size: 180% 180%, cover, 220% 220%;
+    radial-gradient(circle at 22% 24%, rgb(98 232 255 / 24%) 0%, transparent 52%),
+    radial-gradient(circle at 78% 34%, rgb(255 118 220 / 20%) 0%, transparent 52%);
+  background-size: cover, 150% 150%, 140% 140%;
   background-position:
-    var(--background-x) var(--background-y),
     center,
-    var(--pointer-x) var(--pointer-y);
-  background-blend-mode: screen, soft-light, screen;
+    var(--background-x) var(--background-y),
+    calc(100% - var(--background-x)) calc(100% - var(--background-y));
+  background-blend-mode: screen, screen, screen;
   mix-blend-mode: screen;
 }
 
@@ -732,28 +744,25 @@ label {
 
 .foil-glare {
   z-index: 5;
-  opacity: calc(0.035 + (var(--card-opacity) * (0.12 + var(--pointer-from-center) * 0.12)));
+  opacity: calc(0.025 + (var(--card-opacity) * (0.08 + var(--pointer-from-center) * 0.08)));
   background-image:
     radial-gradient(
       farthest-corner circle at var(--pointer-x) var(--pointer-y),
-      rgb(255 255 255 / 72%) 0%,
-      rgb(255 255 255 / 20%) 15%,
-      rgb(255 255 255 / 4%) 36%,
-      rgb(0 0 0 / 26%) 110%
-    ),
-    linear-gradient(
-      128deg,
-      transparent 22%,
-      rgb(255 255 255 / 26%) 48%,
-      transparent 68%
+      rgb(255 255 255 / 46%) 0%,
+      rgb(255 255 255 / 13%) 18%,
+      transparent 48%
     );
-  background-size: cover, 220% 220%;
-  background-position: center, var(--pointer-x) var(--pointer-y);
+  background-size: cover;
+  background-position: center;
   mix-blend-mode: overlay;
 }
 
 .foil-premium .foil-spectrum {
-  opacity: calc(0.12 + (var(--card-opacity) * 0.32));
+  opacity: calc(0.08 + (var(--card-opacity) * 0.22));
+}
+
+.foil-premium .foil-wash {
+  opacity: calc(0.05 + (var(--card-opacity) * 0.14));
 }
 
 @media (prefers-reduced-motion: no-preference) {
