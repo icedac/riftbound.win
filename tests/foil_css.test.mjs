@@ -11,6 +11,12 @@ test("foil spectrum uses broad color wash instead of repeating stripe gradients"
   assert.doesNotMatch(block, /repeating-linear-gradient/);
 });
 
+test("foil CSS avoids repeating stripe gradients across all foil layers", () => {
+  for (const block of css.matchAll(/(?:^|\n)\.foil[\s\S]*?\n}/g)) {
+    assert.doesNotMatch(block[0], /repeating-linear-gradient/);
+  }
+});
+
 test("foil-only card names can show the rainbow effect without single-line truncation", () => {
   const block = cssBlock(".card-title strong.foil-only-name");
 

@@ -667,44 +667,6 @@ label {
   mix-blend-mode: screen;
 }
 
-.foil-etch {
-  z-index: 3;
-  opacity: calc(0.05 + (var(--card-opacity) * 0.28));
-  background-image:
-    repeating-linear-gradient(
-      138deg,
-      rgb(255 255 255 / 0%) 0 14px,
-      rgb(255 255 255 / 40%) 15px 17px,
-      rgb(255 255 255 / 0%) 20px 34px
-    ),
-    repeating-linear-gradient(
-      34deg,
-      hsl(2 100% 73% / 72%) 0%,
-      hsl(53 100% 69% / 70%) 6%,
-      hsl(93 100% 69% / 64%) 12%,
-      hsl(176 100% 76% / 68%) 18%,
-      hsl(228 100% 74% / 66%) 24%,
-      hsl(283 100% 73% / 68%) 30%,
-      hsl(2 100% 73% / 72%) 36%
-    ),
-    conic-gradient(
-      from calc(var(--pointer-from-left) * 120deg),
-      transparent,
-      rgb(255 255 255 / 42%),
-      transparent,
-      rgb(255 255 255 / 22%),
-      transparent
-    );
-  background-size: 62px 62px, 260% 620%, 140% 140%;
-  background-position:
-    center,
-    var(--background-x) var(--background-y),
-    var(--pointer-x) var(--pointer-y);
-  background-blend-mode: screen, color-dodge, soft-light;
-  filter: brightness(1.2) contrast(1.55) saturate(1.25);
-  mix-blend-mode: screen;
-}
-
 .foil-sparkle {
   z-index: 4;
   opacity: calc(0.012 + (var(--card-opacity) * 0.09));
@@ -757,10 +719,6 @@ label {
 
 .foil-premium .foil-spectrum {
   opacity: calc(0.12 + (var(--card-opacity) * 0.32));
-}
-
-.foil-premium .foil-etch {
-  opacity: calc(0.08 + (var(--card-opacity) * 0.36));
 }
 
 @media (prefers-reduced-motion: no-preference) {
