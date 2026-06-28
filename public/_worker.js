@@ -4,6 +4,7 @@ const SESSION_DAYS = 30;
 const BOARDS = new Set(["free", "deck", "notice"]);
 const PROVIDERS = new Set(["google", "naver"]);
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+const MAX_INLINE_MEDIA_BYTES = 1024 * 1024;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 export default {
@@ -64,19 +65,24 @@ async function updateProfile(request, env) {
 
 async function updateAvatar(request, env) {
   if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
-  if (!env.MEDIA) return json({ error: "R2 binding MEDIA is not configured" }, 503);
   const session = await currentSession(request, env);
   if (!session) return json({ error: "Sign in required" }, 401);
   const form = await request.formData();
   const file = form.get("avatar");
   if (!isFile(file) || !file.type.startsWith("image/")) return json({ error: "Image file required" }, 400);
-  if (file.size > MAX_AVATAR_BYTES) return json({ error: "Avatar is too large" }, 400);
+  const sizeLimit = env.MEDIA ? MAX_AVATAR_BYTES : MAX_INLINE_MEDIA_BYTES;
+  if (file.size > sizeLimit) return json({ error: "Avatar is too large" }, 400);
   const key = `avatars/${session.user.id}/avatar.webp`;
-  await env.MEDIA.put(key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: file.type || "image/webp" },
-  });
-  await env.DB.prepare("UPDATE users SET avatar_key = ?, avatar_type = ?, updated_at = ? WHERE id = ?")
-    .bind(key, file.type || "image/webp", Date.now(), session.user.id)
+  let inlineData = "";
+  if (env.MEDIA) {
+    await env.MEDIA.put(key, await file.arrayBuffer(), {
+      httpMetadata: { contentType: file.type || "image/webp" },
+    });
+  } else {
+    inlineData = await fileToBase64(file);
+  }
+  await env.DB.prepare("UPDATE users SET avatar_key = ?, avatar_type = ?, avatar_data = ?, updated_at = ? WHERE id = ?")
+    .bind(key, file.type || "image/webp", inlineData, Date.now(), session.user.id)
     .run();
   return json({ avatar_url: resourceUrl(key) });
 }
@@ -121,10 +127,19 @@ async function createPost(request, env) {
   if (!title) return json({ error: "Title required" }, 400);
 
   const files = form.getAll("media").filter((file) => isFile(file) && file.size > 0).slice(0, 6);
-  if (files.length > 0 && !env.MEDIA) return json({ error: "R2 binding MEDIA is not configured" }, 503);
   for (const file of files) {
     if (!/^image\/|^video\//.test(file.type)) return json({ error: "Only image and video uploads are allowed" }, 400);
-    if (file.size > MAX_MEDIA_BYTES) return json({ error: "Media file is too large" }, 400);
+    const sizeLimit = env.MEDIA ? MAX_MEDIA_BYTES : MAX_INLINE_MEDIA_BYTES;
+    if (file.size > sizeLimit) {
+      return json(
+        {
+          error: env.MEDIA
+            ? "Media file is too large"
+            : "Media file is too large for the temporary D1 media store",
+        },
+        400
+      );
+    }
   }
 
   const id = crypto.randomUUID();
@@ -138,13 +153,18 @@ async function createPost(request, env) {
   for (const file of files) {
     const mediaId = crypto.randomUUID();
     const key = `community/${id}/${mediaId}-${safeName(file.name || "media")}`;
-    await env.MEDIA.put(key, await file.arrayBuffer(), {
-      httpMetadata: { contentType: file.type || "application/octet-stream" },
-    });
+    let inlineData = "";
+    if (env.MEDIA) {
+      await env.MEDIA.put(key, await file.arrayBuffer(), {
+        httpMetadata: { contentType: file.type || "application/octet-stream" },
+      });
+    } else {
+      inlineData = await fileToBase64(file);
+    }
     await env.DB.prepare(
-      "INSERT INTO media (id, post_id, key, media_type, mime_type, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO media (id, post_id, key, media_type, mime_type, inline_data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
-      .bind(mediaId, id, key, file.type.startsWith("video/") ? "video" : "image", file.type, now)
+      .bind(mediaId, id, key, file.type.startsWith("video/") ? "video" : "image", file.type, inlineData, now)
       .run();
   }
 
@@ -359,34 +379,64 @@ async function mediaRows(env, postId) {
 }
 
 async function mediaResponse(env, encodedKey) {
-  if (!env.MEDIA) return new Response("R2 binding MEDIA is not configured", { status: 503 });
   const key = decodeURIComponent(encodedKey);
-  const object = await env.MEDIA.get(key);
-  if (!object) return new Response("Not found", { status: 404 });
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("Cache-Control", "public, max-age=31536000, immutable");
-  headers.set("ETag", object.httpEtag);
-  return new Response(object.body, { headers });
+  if (env.MEDIA) {
+    const object = await env.MEDIA.get(key);
+    if (object) {
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set("Cache-Control", "public, max-age=31536000, immutable");
+      headers.set("ETag", object.httpEtag);
+      return new Response(object.body, { headers });
+    }
+  }
+  return inlineMediaResponse(env, key);
+}
+
+async function inlineMediaResponse(env, key) {
+  if (!env.DB || !(await ensureSchema(env))) return new Response("Not found", { status: 404 });
+  const row = key.startsWith("avatars/")
+    ? await env.DB.prepare("SELECT avatar_data AS inline_data, avatar_type AS mime_type FROM users WHERE avatar_key = ?")
+        .bind(key)
+        .first()
+    : await env.DB.prepare("SELECT inline_data, mime_type FROM media WHERE key = ?")
+        .bind(key)
+        .first();
+  if (!row?.inline_data) return new Response("Not found", { status: 404 });
+  const headers = new Headers({
+    "Content-Type": row.mime_type || "application/octet-stream",
+    "Cache-Control": "public, max-age=31536000, immutable",
+  });
+  return new Response(base64ToArrayBuffer(row.inline_data), { headers });
 }
 
 async function ensureSchema(env) {
   if (!env.DB) return false;
   const statements = [
-    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, display_name TEXT NOT NULL, bio TEXT NOT NULL DEFAULT '', avatar_key TEXT NOT NULL DEFAULT '', avatar_type TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, display_name TEXT NOT NULL, bio TEXT NOT NULL DEFAULT '', avatar_key TEXT NOT NULL DEFAULT '', avatar_type TEXT NOT NULL DEFAULT '', avatar_data TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
     "CREATE TABLE IF NOT EXISTS providers (provider TEXT NOT NULL, provider_user_id TEXT NOT NULL, user_id TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', display_name TEXT NOT NULL DEFAULT '', avatar_url TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (provider, provider_user_id))",
     "CREATE INDEX IF NOT EXISTS providers_user_id_idx ON providers(user_id)",
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)",
     "CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, board TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', user_id TEXT, author_name TEXT NOT NULL DEFAULT 'Guest', votes INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS posts_board_created_idx ON posts(board, created_at)",
-    "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, post_id TEXT NOT NULL, key TEXT NOT NULL, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, created_at INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, post_id TEXT NOT NULL, key TEXT NOT NULL, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, inline_data TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS media_post_id_idx ON media(post_id)",
   ];
   for (const statement of statements) {
     await env.DB.prepare(statement).run();
   }
+  await runSchemaMigration(env, "ALTER TABLE users ADD COLUMN avatar_data TEXT NOT NULL DEFAULT ''", /duplicate column/i);
+  await runSchemaMigration(env, "ALTER TABLE media ADD COLUMN inline_data TEXT NOT NULL DEFAULT ''", /duplicate column/i);
   return true;
+}
+
+async function runSchemaMigration(env, statement, ignorableError) {
+  try {
+    await env.DB.prepare(statement).run();
+  } catch (error) {
+    if (!ignorableError.test(String(error?.message || error))) throw error;
+  }
 }
 
 function publicUser(user) {
@@ -399,7 +449,8 @@ function publicUser(user) {
 }
 
 function resourceUrl(key) {
-  return `/${key.split("/").map(encodeURIComponent).join("/")}`;
+  const path = key.split("/").map(encodeURIComponent).join("/");
+  return key.startsWith("avatars/") ? `/${path}` : `/media/${path}`;
 }
 
 function redirectWithError(request, code) {
@@ -460,4 +511,26 @@ function safeName(value) {
 
 function isFile(value) {
   return value && typeof value === "object" && "name" in value && "size" in value && "type" in value && "arrayBuffer" in value;
+}
+
+async function fileToBase64(file) {
+  return bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64ToArrayBuffer(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
 }

@@ -61,9 +61,11 @@ OAuth callback URLs to register with providers:
 - `https://riftbound.win/api/auth/naver/callback`
 - `https://riftbound.kr/api/auth/naver/callback`
 
-Without Pages bindings, the deployed Pages site still serves the static UI, but
-production auth/profile/community uploads require the `DB` and `MEDIA` bindings
-above. The local Rust server does not need those Cloudflare bindings.
+The `DB` binding is enough for posts, profile edits, linked account state, and
+small pasted media/avatar fallback storage. R2 `MEDIA` is still the intended
+store for larger images and videos; without it, production media uploads are
+limited to small inline D1 objects. The local Rust server does not need those
+Cloudflare bindings.
 
 ## Deck Rules
 
