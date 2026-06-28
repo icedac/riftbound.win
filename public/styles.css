@@ -1208,6 +1208,33 @@ dialog::backdrop {
   font-size: 22px;
 }
 
+.deck-rules {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #10161b;
+}
+
+.deck-rules span {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.deck-rules span + span {
+  border-left: 1px solid var(--line);
+}
+
+.deck-rules strong {
+  color: #fff;
+  font-size: 18px;
+}
+
 .deck-validation {
   display: flex;
   flex-wrap: wrap;
@@ -1245,9 +1272,110 @@ dialog::backdrop {
 
 .deck-sections {
   display: grid;
-  grid-template-columns: 250px minmax(320px, 1fr) 250px 270px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-items: start;
+}
+
+.deck-list-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.75fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.deck-list-group {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 8px;
+  background: #10161b;
+}
+
+.deck-list-group-head,
+.deck-list-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.deck-list-group-head h2 {
+  color: #fff;
+  font-size: 18px;
+}
+
+.deck-list-group-head span,
+.deck-list-subhead span {
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.deck-list-compact {
+  display: grid;
+  gap: 12px;
+}
+
+.deck-list-subsection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.deck-list-subhead h3 {
+  color: #dbe3ec;
+  font-size: 13px;
+}
+
+.deck-list-rows {
+  display: grid;
+  gap: 6px;
+  max-height: 250px;
+  overflow: auto;
+}
+
+.deck-list-row {
+  display: grid;
+  grid-template-columns: 42px minmax(92px, 1.2fr) minmax(82px, 0.7fr) 32px 32px;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 8px;
+  background: #11181e;
+  cursor: pointer;
+}
+
+.deck-list-row span,
+.deck-list-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deck-list-row strong {
+  color: #fff;
+}
+
+.deck-list-row span {
+  color: #dbe3ec;
+  font-weight: 780;
+}
+
+.deck-list-row small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.deck-list-row button {
+  width: 32px;
+  min-height: 30px;
+  padding: 0;
 }
 
 .deck-section {
@@ -1314,9 +1442,62 @@ dialog::backdrop {
   color: #fff;
 }
 
+.preview-deck-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.preview-deck-status span {
+  display: grid;
+  gap: 2px;
+  padding: 9px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.preview-deck-status span + span {
+  border-left: 1px solid var(--line);
+}
+
+.preview-deck-status strong {
+  color: #fff;
+  font-size: 18px;
+}
+
+.preview-rules {
+  display: grid;
+  gap: 7px;
+  padding: 12px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 8px;
+  background: #10161b;
+}
+
+.preview-rules h3 {
+  color: #fff;
+  font-size: 14px;
+}
+
+.preview-flavor {
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.45;
+}
+
 .deck-io {
   display: grid;
+  align-content: start;
   gap: 10px;
+}
+
+.deck-io button,
+.draw-actions button {
+  align-self: start;
+  min-height: 40px;
 }
 
 .deck-tools {
@@ -1769,6 +1950,8 @@ dialog::backdrop {
     max-height: none;
   }
 
+  .deck-rules,
+  .deck-list-top,
   .deck-sections,
   .deck-tools {
     grid-template-columns: 1fr 1fr;
@@ -1853,6 +2036,8 @@ dialog::backdrop {
 
   .filters,
   .deck-filters,
+  .deck-rules,
+  .deck-list-top,
   .deck-sections,
   .deck-tools,
   .post-composer {
@@ -1899,12 +2084,14 @@ dialog::backdrop {
   }
 
   .hero-meter,
+  .deck-rules,
   .deck-stats,
   .board-counts {
     grid-template-columns: 1fr;
   }
 
   .hero-meter span + span,
+  .deck-rules span + span,
   .deck-stats span + span,
   .board-counts span + span {
     border-top: 1px solid var(--line);

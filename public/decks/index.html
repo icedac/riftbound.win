@@ -27,9 +27,33 @@
           <p id="deckSummary">Loading cards...</p>
         </div>
 
+        <div id="deckRules" class="deck-rules" aria-label="Deck construction rules">
+          <span><strong>40</strong> main cards</span>
+          <span><strong>12</strong> runes</span>
+          <span><strong>1</strong> legend</span>
+          <span><strong>3</strong> unique battlefields</span>
+          <span><strong>3x</strong> max main copies</span>
+        </div>
+
         <div id="deckStats" class="deck-stats"></div>
         <div id="validationMessages" class="deck-validation" aria-live="polite"></div>
-        <div id="deckSections" class="deck-sections"></div>
+        <div id="deckListTop" class="deck-list-top" aria-label="Deck cards and runes">
+          <section class="deck-list-group" data-deck-group="cards">
+            <div class="deck-list-group-head">
+              <h2>Cards</h2>
+              <span id="cardDeckCount">0 / 44</span>
+            </div>
+            <div id="cardDeckList" class="deck-list-compact"></div>
+          </section>
+          <section class="deck-list-group" data-deck-group="runes">
+            <div class="deck-list-group-head">
+              <h2>Runes</h2>
+              <span id="runeDeckCount">0 / 12</span>
+            </div>
+            <div id="runeDeckList" class="deck-list-compact"></div>
+          </section>
+        </div>
+        <div id="deckSections" class="deck-sections" hidden></div>
 
         <div class="deck-tools">
           <div class="deck-io">

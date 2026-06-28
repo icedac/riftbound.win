@@ -154,6 +154,13 @@ export function validateRiftboundDeck(sections = {}) {
   if (counts.legends !== 1) errors.push(`Choose exactly 1 legend. Current: ${counts.legends}.`);
   if (counts.battlefields !== 3) errors.push(`Choose exactly 3 battlefields. Current: ${counts.battlefields}.`);
 
+  for (const entry of sections.main ?? []) {
+    if ((Number(entry.quantity) || 0) > 3) {
+      const name = entry.card?.name ? ` ${entry.card.name}` : "";
+      errors.push(`${entry.id}${name} exceeds the 3-copy main deck limit.`);
+    }
+  }
+
   const uniqueBattlefields = new Set((sections.battlefields ?? []).map((entry) => entry.id)).size;
   if (counts.battlefields === 3 && uniqueBattlefields < 3) {
     warnings.push("Tournament rules use 3 unique battlefields.");

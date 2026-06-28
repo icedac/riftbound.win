@@ -21,6 +21,15 @@ const cards = [
   { id: "OGN-126", name: "Body Rune", colors: ["Body"], card_type: "Rune" },
   { id: "OGN-042", name: "Calm Rune", colors: ["Calm"], card_type: "Rune" },
   { id: "UNL-205", name: "Abandoned Hall", colors: ["Colorless"], card_type: "Battlefield" },
+  { id: "UNL-206", name: "Altar of Blood", colors: ["Colorless"], card_type: "Battlefield" },
+  { id: "OGN-275", name: "Altar to Unity", colors: ["Colorless"], card_type: "Battlefield" },
+  ...Array.from({ length: 14 }, (_, idx) => ({
+    id: `TST-${String(idx + 1).padStart(3, "0")}`,
+    name: `Test Main ${idx + 1}`,
+    colors: ["Fury"],
+    card_type: idx % 2 === 0 ? "Unit" : "Spell",
+    cost: String((idx % 5) + 1),
+  })),
 ];
 
 test("normalizes common Riftbound card id input", () => {
@@ -130,11 +139,15 @@ test("validates Riftbound constructed deck counts", () => {
   const index = createCardIndex(cards);
   const sections = buildDeckSections(
     [
-      { id: "OGN-111", quantity: 40 },
+      ...cards
+        .filter((card) => card.id.startsWith("TST-"))
+        .map((card, idx) => ({ id: card.id, quantity: idx === 13 ? 1 : 3 })),
       { id: "OGN-126", quantity: 10 },
       { id: "OGN-042", quantity: 2 },
       { id: "UNL-236-STAR", quantity: 1 },
-      { id: "UNL-205", quantity: 3 },
+      { id: "UNL-205", quantity: 1 },
+      { id: "UNL-206", quantity: 1 },
+      { id: "OGN-275", quantity: 1 },
     ],
     index
   );
@@ -146,6 +159,27 @@ test("validates Riftbound constructed deck counts", () => {
   assert.equal(validation.counts.legends, 1);
   assert.equal(validation.counts.battlefields, 3);
   assert.deepEqual(validation.errors, []);
+});
+
+test("validates the three-copy limit for main deck cards but not rune quantities", () => {
+  const index = createCardIndex(cards);
+  const sections = buildDeckSections(
+    [
+      { id: "OGN-111", quantity: 4 },
+      { id: "OGN-126", quantity: 10 },
+      { id: "OGN-042", quantity: 2 },
+      { id: "UNL-236-STAR", quantity: 1 },
+      { id: "UNL-205", quantity: 1 },
+      { id: "UNL-206", quantity: 1 },
+      { id: "OGN-275", quantity: 1 },
+    ],
+    index
+  );
+
+  const validation = validateRiftboundDeck(sections);
+
+  assert(validation.errors.some((message) => message.includes("OGN-111") && message.includes("3")));
+  assert(!validation.errors.some((message) => message.includes("OGN-126")));
 });
 
 test("draws deterministic test hand from main deck and two runes from rune deck", () => {

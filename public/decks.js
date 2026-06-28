@@ -44,6 +44,11 @@ const els = {
   type: document.querySelector("#deckType"),
   results: document.querySelector("#deckResults"),
   deckStats: document.querySelector("#deckStats"),
+  deckListTop: document.querySelector("#deckListTop"),
+  cardDeckCount: document.querySelector("#cardDeckCount"),
+  runeDeckCount: document.querySelector("#runeDeckCount"),
+  cardDeckList: document.querySelector("#cardDeckList"),
+  runeDeckList: document.querySelector("#runeDeckList"),
   deckSections: document.querySelector("#deckSections"),
   validation: document.querySelector("#validationMessages"),
   importText: document.querySelector("#importText"),
@@ -94,6 +99,12 @@ function bindEvents() {
     if (add) addCard(add.dataset.addCard, Number(add.dataset.amount || 1));
   });
   els.deckSections.addEventListener("click", (event) => {
+    const inspect = event.target.closest("[data-inspect-card]");
+    const edit = event.target.closest("[data-deck-card]");
+    if (inspect) selectCard(inspect.dataset.inspectCard);
+    if (edit) addCard(edit.dataset.deckCard, Number(edit.dataset.amount || 1));
+  });
+  els.deckListTop.addEventListener("click", (event) => {
     const inspect = event.target.closest("[data-inspect-card]");
     const edit = event.target.closest("[data-deck-card]");
     if (inspect) selectCard(inspect.dataset.inspectCard);
@@ -176,6 +187,7 @@ function renderDeckBoard() {
   }
   if (validationNodes.length === 0) validationNodes.push(pill("ok", "Constructed counts look legal"));
   els.validation.replaceChildren(...validationNodes);
+  renderTopDeckList(sections, validation);
 
   const fragment = document.createDocumentFragment();
   for (const section of ["legends", "main", "runes", "battlefields"]) {
@@ -184,6 +196,53 @@ function renderDeckBoard() {
   els.deckSections.replaceChildren(fragment);
   renderExport();
   renderDraw();
+}
+
+function renderTopDeckList(sections, validation) {
+  const cardCount = validation.counts.legends + validation.counts.main + validation.counts.battlefields;
+  els.cardDeckCount.textContent = `${cardCount} / 44`;
+  els.runeDeckCount.textContent = `${validation.counts.runes} / 12`;
+
+  els.cardDeckList.replaceChildren(
+    compactSection("Chosen Legend", sections.legends ?? [], 1),
+    compactSection("Main Deck", sections.main ?? [], 40),
+    compactSection("Battlefields", sections.battlefields ?? [], 3)
+  );
+  els.runeDeckList.replaceChildren(compactSection("Rune Deck", sections.runes ?? [], 12));
+}
+
+function compactSection(label, entries, target) {
+  const root = div("deck-list-subsection");
+  const count = entries.reduce((total, entry) => total + entry.quantity, 0);
+  const head = div("deck-list-subhead");
+  head.append(text("h3", label), text("span", `${count} / ${target}`));
+  root.append(head);
+
+  if (entries.length === 0) {
+    const empty = text("p", "Empty");
+    empty.className = "deck-section-empty";
+    root.append(empty);
+    return root;
+  }
+
+  const list = div("deck-list-rows");
+  for (const entry of entries) list.append(compactDeckRow(entry));
+  root.append(list);
+  return root;
+}
+
+function compactDeckRow(entry) {
+  const card = state.index.byId.get(entry.id) ?? entry.card;
+  const row = div("deck-list-row");
+  row.dataset.inspectCard = entry.id;
+  row.append(
+    text("strong", `${entry.quantity}x`),
+    text("span", card?.name || entry.id),
+    text("small", entry.id),
+    actionButton("-", "deck-card", entry.id, -1, "Remove one"),
+    actionButton("+", "deck-card", entry.id, 1, "Add one")
+  );
+  return row;
 }
 
 function sectionNode(section, entries, target) {
@@ -263,12 +322,23 @@ function renderPreview() {
   const meta = div("meta");
   for (const value of [card.id, card.card_type, card.set_name, card.rarity].filter(Boolean)) meta.append(pill("pill", value));
   copy.append(meta, colorChips(card));
+  copy.append(previewDeckStatus(card));
   const effect = text("p", card.effect_text || "No rules text.");
   effect.className = "detail-effect";
-  copy.append(effect);
-  if (card.flavor) copy.append(text("p", card.flavor));
+  const rules = div("preview-rules");
+  rules.append(text("h3", "Rules text"), effect);
+  copy.append(rules);
+  if (card.flavor) {
+    const flavor = text("p", card.flavor);
+    flavor.className = "preview-flavor";
+    copy.append(flavor);
+  }
   const controls = div("preview-actions");
-  controls.append(actionButton("+1", "add-card", card.id, 1, "Add one"), actionButton("+3", "add-card", card.id, 3, "Add three"));
+  controls.append(
+    actionButton("-1", "add-card", card.id, -1, "Remove one"),
+    actionButton("+1", "add-card", card.id, 1, "Add one"),
+    actionButton("+3", "add-card", card.id, 3, "Add three")
+  );
   controls.addEventListener("click", (event) => {
     const add = event.target.closest("[data-add-card]");
     if (add) addCard(add.dataset.addCard, Number(add.dataset.amount || 1));
@@ -276,6 +346,17 @@ function renderPreview() {
   copy.append(controls);
   root.append(copy);
   els.preview.replaceChildren(root);
+}
+
+function previewDeckStatus(card) {
+  const node = div("preview-deck-status");
+  const quantity = state.deck.get(card.id) || 0;
+  node.append(
+    statNode(quantity, "in deck"),
+    statNode(sectionLabels[sectionForCard(card)] || "Main Deck", "section"),
+    statNode(card.cost ?? "-", "cost")
+  );
+  return node;
 }
 
 function renderDraw() {
