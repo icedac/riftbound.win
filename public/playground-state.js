@@ -1,4 +1,5 @@
 const DEFAULT_NOW = () => Date.now();
+const VICTORY_SCORE = 8;
 
 export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW(), cards = [] } = {}) {
   const tableId = id || randomId("table");
@@ -10,6 +11,7 @@ export function createPlaygroundTable({ id, savedDeck, user, now = DEFAULT_NOW()
     updated_at: now,
     started_at: null,
     completed_at: null,
+    victory_score: VICTORY_SCORE,
     turn_player_id: user?.id || "",
     seats: [seat],
     events: [],
@@ -172,7 +174,10 @@ function applyEvent(table, event) {
       updated_at: event.created_at,
     };
   }
+  if (event.type === "score.point") applyScorePoint(table, event);
   if (event.type === "result.propose") {
+    table.result ||= { proposals: {}, final: "" };
+    table.result.proposals ||= {};
     table.result.proposals[event.actor_id] = event.payload.result || "";
     const proposals = Object.values(table.result.proposals).filter(Boolean);
     if (table.seats.length >= 2 && proposals.length >= 2 && new Set(proposals).size === 1) {
@@ -181,6 +186,44 @@ function applyEvent(table, event) {
       table.result.final = proposals[0];
     }
   }
+}
+
+function applyScorePoint(table, event) {
+  const seats = table.seats || [];
+  const payload = event.payload || {};
+  const targetUserId = payload.user_id || event.actor_id || "";
+  const seat =
+    seats.find((item) => item.user_id === targetUserId) ||
+    (Number.isInteger(Number(payload.seat_index)) ? seats[Number(payload.seat_index)] : null);
+  if (!seat) return;
+  seat.points = Math.max(0, Number(seat.points || 0) + scoreAmount(payload.amount));
+  applyVictoryCheck(table, seat, event);
+}
+
+function applyVictoryCheck(table, scoringSeat, event) {
+  const seats = table.seats || [];
+  const points = Number(scoringSeat.points || 0);
+  const victoryScore = Number(table.victory_score || VICTORY_SCORE);
+  const hasLead = seats.every((seat) => seat.user_id === scoringSeat.user_id || points > Number(seat.points || 0));
+  if (points < victoryScore || !hasLead) return;
+  table.result ||= { proposals: {}, final: "" };
+  table.status = "completed";
+  table.completed_at = event.created_at;
+  table.result.final = resultForSeat(table, scoringSeat);
+  table.result.winner_user_id = scoringSeat.user_id;
+}
+
+function scoreAmount(value) {
+  const parsed = Math.floor(Number(value ?? 1));
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.min(99, parsed));
+}
+
+function resultForSeat(table, seat) {
+  const index = (table.seats || []).findIndex((item) => item.user_id === seat.user_id);
+  if (index === 0) return "host-win";
+  if (index === 1) return "guest-win";
+  return `${seat.user_id}-win`;
 }
 
 function drawOpeningHands(table) {
@@ -263,6 +306,7 @@ function eventSummary(event) {
   if (event.type === "card.flip") return `Flip selected card in ${event.payload.zone || "battlefield"} ${event.payload.face_up === false ? "face down" : "face up"}`;
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
+  if (event.type === "score.point") return `Score point: +${scoreAmount(event.payload?.amount)}`;
   if (event.type === "turn.pass") return `Turn passed to ${event.payload.to_user_id || "next player"}`;
   if (event.type === "result.propose") return `Result proposed: ${event.payload.result || "unknown"}`;
   return event.type || "unknown";

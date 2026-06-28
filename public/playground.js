@@ -1,4 +1,4 @@
-import { replayTableEvents } from "/playground-state.js?v=20260628-playground4";
+import { replayTableEvents } from "/playground-state.js?v=20260628-playground5";
 import {
   canUseRealtimeTransport,
   createSignalEnvelope,
@@ -52,6 +52,7 @@ const els = {
   drawRune: document.querySelector("#drawRune"),
   revealCard: document.querySelector("#revealCard"),
   moveBattlefield: document.querySelector("#moveBattlefield"),
+  scorePoint: document.querySelector("#scorePoint"),
   selectedCardStatus: document.querySelector("#selectedCardStatus"),
   moveToZone: document.querySelector("#moveToZone"),
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
@@ -119,6 +120,7 @@ function bindEvents() {
   els.moveBattlefield.addEventListener("click", () => (selectedCardRecord() ? moveSelectedCardTo("battlefield") : appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 })));
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
+  els.scorePoint.addEventListener("click", () => appendAction("score.point", { amount: 1, source: "manual" }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
   els.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -474,7 +476,7 @@ function renderTable() {
   const table = currentTable();
   const controlsDisabled = !table || !state.me || !currentSeat();
   els.startGame.disabled = !canStartTable(table);
-  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.passTurn, els.submitResult]) {
+  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.passTurn, els.submitResult]) {
     control.disabled = !isTableActive(table) || controlsDisabled;
   }
   els.toggleVoice.disabled = controlsDisabled;
@@ -507,7 +509,7 @@ function seatZones(seat) {
   const root = document.createElement("article");
   root.className = ["seat-board", seat.user_id === currentUserId() ? "is-current-player" : "is-opponent-player"].join(" ");
   root.dataset.seatIndex = seat.seat_index;
-  root.append(text("h3", `${seat.display_name} · ${seat.deck_name}`));
+  root.append(text("h3", `${seat.display_name} · ${seat.deck_name} · ${seat.points || 0} VP`));
   const zones = document.createElement("div");
   zones.className = "zone-grid";
   for (const key of ["main_deck", "rune_deck", "rune_pool", "hand", "battlefield", "discard", "removed", "revealed"]) {
@@ -623,6 +625,7 @@ function eventSummary(event) {
   if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
+  if (event.type === "score.point") return `score +${event.payload?.amount || 1}`;
   if (event.type === "turn.pass") return `pass to ${playerName(currentTable(), event.payload?.to_user_id)}`;
   if (event.type === "result.propose") return `result ${event.payload?.result || ""}`;
   return event.type || "event";

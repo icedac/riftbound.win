@@ -621,6 +621,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const created = await create.json();
   const tableId = created.table.id;
   assert.equal(created.table.status, "waiting");
+  assert.equal(created.table.victory_score, 8);
   assert.equal(created.table.seats[0].zones.main_deck.length, 5);
   assert.equal(created.table.seats[0].zones.rune_pool.length, 0);
   assert.equal(created.table.seats[0].points, 0);
@@ -731,6 +732,22 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   );
   assert.equal(forged.status, 400);
 
+  const scorePoint = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "score.point", payload: { amount: 8, source: "hold" } }),
+    }),
+    env
+  );
+  assert.equal(scorePoint.status, 201);
+  const scored = await scorePoint.json();
+  assert.equal(scored.event.sequence, 6);
+  assert.equal(scored.table.seats[0].points, 8);
+  assert.equal(scored.table.status, "completed");
+  assert.equal(scored.table.result.final, "host-win");
+  assert.equal(scored.table.result.winner_user_id, "host-user");
+
   const events = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events?after=0`, {
       headers: { Cookie: "rw_session=guest-session" },
@@ -739,7 +756,8 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   );
   assert.equal(events.status, 200);
   const eventList = await events.json();
-  assert.equal(eventList.events.length, 5);
+  assert.equal(eventList.events.length, 6);
   assert.equal(eventList.events[3].type, "card.flip");
   assert.equal(eventList.events[4].type, "turn.pass");
+  assert.equal(eventList.events[5].type, "score.point");
 });

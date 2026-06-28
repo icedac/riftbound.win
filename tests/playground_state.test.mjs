@@ -32,6 +32,7 @@ test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
 
   assert.equal(table.id, "table-1");
   assert.equal(table.status, "waiting");
+  assert.equal(table.victory_score, 8);
   assert.equal(table.seats[0].user_id, "user-host");
   assert.equal(table.seats[0].deck_name, "Ahri Tempo");
   assert.equal(table.seats[0].deck_snapshot.entries[0].quantity, 5);
@@ -40,6 +41,31 @@ test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   assert.equal(table.seats[0].zones.rune_deck.length, 2);
   assert.deepEqual(table.seats[0].zones.rune_pool, []);
   assert.equal(table.seats[0].points, 0);
+});
+
+test("score point completes a table when a player reaches the victory score with the lead", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  table = appendTableEvent(table, { actorId: host.id, type: "score.point", payload: { amount: 8, source: "hold" }, now: 1300 });
+
+  assert.equal(table.seats[0].points, 8);
+  assert.equal(table.seats[1].points, 0);
+  assert.equal(table.status, "completed");
+  assert.equal(table.completed_at, 1300);
+  assert.equal(table.result.final, "host-win");
+  assert.equal(table.result.winner_user_id, host.id);
+
+  const replay = replayTableEvents(table.events);
+  assert.equal(replay[1].summary, "Score point: +8");
+});
+
+test("score point normalizes invalid amounts to one point", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
+  table = appendTableEvent(table, { actorId: host.id, type: "score.point", payload: { amount: "bad" }, now: 1100 });
+
+  assert.equal(table.seats[0].points, 1);
+  assert.equal(replayTableEvents(table.events)[0].summary, "Score point: +1");
 });
 
 test("joined tables append ordered events, preserve chat and voice state, and replay the log", () => {

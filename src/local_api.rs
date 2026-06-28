@@ -17,6 +17,7 @@ const SESSION_COOKIE: &str = "rw_session";
 const SESSION_DAYS: i64 = 30;
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
 const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
+const PLAYGROUND_VICTORY_SCORE: i64 = 8;
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -1144,6 +1145,7 @@ fn create_table_snapshot(
         "updated_at": now,
         "started_at": null,
         "completed_at": null,
+        "victory_score": PLAYGROUND_VICTORY_SCORE,
         "turn_player_id": user.id,
         "seats": [create_seat_snapshot(0, user, deck, now)],
         "events": [],
@@ -1294,6 +1296,7 @@ fn active_playground_event_type(value: &str) -> bool {
             | "card.reveal"
             | "card.flip"
             | "turn.pass"
+            | "score.point"
             | "result.propose"
             | "player.concede"
     )
@@ -1374,6 +1377,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
                 }),
             );
         }
+    }
+    if event_type == "score.point" {
+        apply_score_point(table, event);
     }
     if event_type == "result.propose" {
         apply_result_proposal(table, event);
@@ -1631,6 +1637,100 @@ fn apply_result_proposal(table: &mut Value, event: &Value) {
     }
 }
 
+fn apply_score_point(table: &mut Value, event: &Value) {
+    let payload = &event["payload"];
+    let target_user_id = payload
+        .get("user_id")
+        .and_then(Value::as_str)
+        .or_else(|| event["actor_id"].as_str())
+        .unwrap_or_default()
+        .to_string();
+    let seat_index = score_target_seat_index(table, &target_user_id, payload);
+    let Some(seat_index) = seat_index else {
+        return;
+    };
+    let amount = score_amount(payload.get("amount"));
+    let Some(seat) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+    else {
+        return;
+    };
+    let points = seat.get("points").and_then(Value::as_i64).unwrap_or(0) + amount;
+    if let Some(seat_object) = seat.as_object_mut() {
+        seat_object.insert("points".to_string(), json!(points.max(0)));
+    }
+    apply_victory_check(table, seat_index, event);
+}
+
+fn score_target_seat_index(table: &Value, target_user_id: &str, payload: &Value) -> Option<usize> {
+    let seats = table.get("seats").and_then(Value::as_array)?;
+    if !target_user_id.is_empty() {
+        if let Some(index) = seats
+            .iter()
+            .position(|seat| seat.get("user_id").and_then(Value::as_str) == Some(target_user_id))
+        {
+            return Some(index);
+        }
+    }
+    payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .map(|index| index as usize)
+        .filter(|index| *index < seats.len())
+}
+
+fn apply_victory_check(table: &mut Value, seat_index: usize, event: &Value) {
+    let seats = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let Some(scoring_seat) = seats.get(seat_index) else {
+        return;
+    };
+    let points = scoring_seat
+        .get("points")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let victory_score = table
+        .get("victory_score")
+        .and_then(Value::as_i64)
+        .unwrap_or(PLAYGROUND_VICTORY_SCORE);
+    let has_lead = seats.iter().enumerate().all(|(index, seat)| {
+        index == seat_index || points > seat.get("points").and_then(Value::as_i64).unwrap_or(0)
+    });
+    if points < victory_score || !has_lead {
+        return;
+    }
+    let winner_user_id = scoring_seat
+        .get("user_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let final_result = result_for_seat(seat_index, &winner_user_id);
+    if !table.get("result").is_some_and(Value::is_object) {
+        table["result"] = json!({ "proposals": {}, "final": "" });
+    }
+    table["status"] = json!("completed");
+    table["completed_at"] = event["created_at"].clone();
+    table["result"]["final"] = json!(final_result);
+    table["result"]["winner_user_id"] = json!(winner_user_id);
+}
+
+fn score_amount(value: Option<&Value>) -> i64 {
+    value.and_then(Value::as_i64).unwrap_or(1).clamp(1, 99)
+}
+
+fn result_for_seat(seat_index: usize, user_id: &str) -> String {
+    match seat_index {
+        0 => "host-win".to_string(),
+        1 => "guest-win".to_string(),
+        _ => format!("{user_id}-win"),
+    }
+}
+
 fn push_array_value(root: &mut Value, key: &str, value: Value) {
     if !root.get(key).is_some_and(Value::is_array) {
         root[key] = json!([]);
@@ -1648,6 +1748,7 @@ fn valid_playground_event_type(value: &str) -> bool {
             | "turn.pass"
             | "chat.message"
             | "voice.presence"
+            | "score.point"
             | "result.propose"
             | "player.concede"
     )

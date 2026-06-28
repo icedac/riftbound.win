@@ -58,18 +58,19 @@ Playground implication:
 ## Victory And Results
 
 - Core Rules cleanup checks whether a player has reached the victory score and has more points than any opponent.
-- In the current Playground slice, the app records the mutually agreed result with `result.propose` and completes only when both players choose the same result.
+- The current Playground snapshot stores `victory_score: 8` for the default duel setup.
+- `score.point` adds points to a player. If that player is at or above `victory_score` and has more points than every opponent, the table completes automatically and records that player as the winner.
+- The app also records a mutually agreed result with `result.propose` and completes when both players choose the same result.
 
 Playground implication:
-- Keep mutual result confirmation for now.
-- Add tracked `points` per player before attempting automatic victory.
-- Once points exist, `result.propose` should become a correction/override path rather than the only ending path.
+- Keep mutual result confirmation as a correction/override path.
+- The next step is to wire battlefield control and hold/conquer checks into `score.point` instead of using only the manual Score Point control.
 
 ## Engine Backlog
 
 - Add explicit table phases and rune pool state.
 - Add public/private/secret card masking.
 - Add battlefield objects and control state.
-- Add point tracking and victory score.
+- Add automated battlefield scoring and control checks.
 - Add action legality for turn player, reactions, chain, and showdown state.
 - Add replay snapshots or deterministic reducers for every new event type.

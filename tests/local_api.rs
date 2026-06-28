@@ -457,7 +457,12 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     assert_eq!(create.status(), StatusCode::CREATED);
     let created = json(create).await;
     let table_id = created["table"]["id"].as_str().expect("table id");
+    let host_user_id = created["table"]["seats"][0]["user_id"]
+        .as_str()
+        .expect("host user id")
+        .to_string();
     assert_eq!(created["table"]["status"], "waiting");
+    assert_eq!(created["table"]["victory_score"], 8);
     assert_eq!(created["table"]["seats"].as_array().unwrap().len(), 1);
     assert_eq!(
         created["table"]["seats"][0]["deck_snapshot"]["main"][0]["id"],
@@ -676,6 +681,23 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     .await;
     assert_eq!(forged_snapshot.status(), StatusCode::BAD_REQUEST);
 
+    let score_point = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"score.point","payload":{"amount":8,"source":"hold"}}"#),
+    )
+    .await;
+    assert_eq!(score_point.status(), StatusCode::CREATED);
+    let scored = json(score_point).await;
+    assert_eq!(scored["event"]["sequence"], 6);
+    assert_eq!(scored["table"]["seats"][0]["points"], 8);
+    assert_eq!(scored["table"]["status"], "completed");
+    assert_eq!(scored["table"]["result"]["final"], "host-win");
+    assert_eq!(scored["table"]["result"]["winner_user_id"], host_user_id);
+
     let events = json(
         request(
             &app,
@@ -688,10 +710,11 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         .await,
     )
     .await;
-    assert_eq!(events["events"].as_array().unwrap().len(), 5);
+    assert_eq!(events["events"].as_array().unwrap().len(), 6);
     assert_eq!(events["events"][1]["type"], "card.move");
     assert_eq!(events["events"][3]["type"], "card.flip");
     assert_eq!(events["events"][4]["type"], "turn.pass");
+    assert_eq!(events["events"][5]["type"], "score.point");
 
     let table = json(
         request(
@@ -705,7 +728,7 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         .await,
     )
     .await;
-    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 5);
+    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 6);
     assert_eq!(
         table["table"]["seats"][0]["zones"]["hand"]
             .as_array()

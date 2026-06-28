@@ -8,6 +8,7 @@ const PROVIDERS = new Set(["google", "naver"]);
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const MAX_INLINE_MEDIA_BYTES = 1024 * 1024;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const PLAYGROUND_VICTORY_SCORE = 8;
 const PLAYGROUND_SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
 const playgroundSockets = new Map();
 
@@ -834,6 +835,7 @@ function createTableSnapshot(tableId, user, deck, now) {
     updated_at: now,
     started_at: null,
     completed_at: null,
+    victory_score: PLAYGROUND_VICTORY_SCORE,
     turn_player_id: user.id,
     seats: [createSeatSnapshot(0, user, deck, now)],
     events: [],
@@ -910,7 +912,7 @@ function hostUserId(table) {
 }
 
 function activePlaygroundEventTypes() {
-  return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "result.propose", "player.concede"]);
+  return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "score.point", "result.propose", "player.concede"]);
 }
 
 function applyPlaygroundEvent(table, event) {
@@ -945,6 +947,7 @@ function applyPlaygroundEvent(table, event) {
       updated_at: event.created_at,
     };
   }
+  if (event.type === "score.point") applyScorePoint(table, event);
   if (event.type === "result.propose") applyResultProposal(table, event);
   table.events.push(event);
 }
@@ -1018,6 +1021,44 @@ function applyResultProposal(table, event) {
   }
 }
 
+function applyScorePoint(table, event) {
+  const seats = table.seats || [];
+  const payload = event.payload || {};
+  const targetUserId = payload.user_id || event.actor_id || "";
+  const seat =
+    seats.find((item) => item.user_id === targetUserId) ||
+    (Number.isInteger(Number(payload.seat_index)) ? seats[Number(payload.seat_index)] : null);
+  if (!seat) return;
+  seat.points = Math.max(0, Number(seat.points || 0) + scoreAmount(payload.amount));
+  applyVictoryCheck(table, seat, event);
+}
+
+function applyVictoryCheck(table, scoringSeat, event) {
+  const seats = table.seats || [];
+  const points = Number(scoringSeat.points || 0);
+  const victoryScore = Number(table.victory_score || PLAYGROUND_VICTORY_SCORE);
+  const hasLead = seats.every((seat) => seat.user_id === scoringSeat.user_id || points > Number(seat.points || 0));
+  if (points < victoryScore || !hasLead) return;
+  table.result ||= { proposals: {}, final: "" };
+  table.status = "completed";
+  table.completed_at = event.created_at;
+  table.result.final = resultForSeat(table, scoringSeat);
+  table.result.winner_user_id = scoringSeat.user_id;
+}
+
+function scoreAmount(value) {
+  const parsed = Math.floor(Number(value ?? 1));
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.min(99, parsed));
+}
+
+function resultForSeat(table, seat) {
+  const index = (table.seats || []).findIndex((item) => item.user_id === seat.user_id);
+  if (index === 0) return "host-win";
+  if (index === 1) return "guest-win";
+  return `${seat.user_id}-win`;
+}
+
 function nextSeatUserId(table, actorId) {
   const seats = table.seats || [];
   const current = seats.findIndex((seat) => seat.user_id === actorId);
@@ -1025,7 +1066,7 @@ function nextSeatUserId(table, actorId) {
 }
 
 function validPlaygroundEventType(type) {
-  return new Set(["game.start", "card.move", "card.reveal", "card.flip", "turn.pass", "chat.message", "voice.presence", "result.propose", "player.concede"]).has(type);
+  return new Set(["game.start", "card.move", "card.reveal", "card.flip", "turn.pass", "chat.message", "voice.presence", "score.point", "result.propose", "player.concede"]).has(type);
 }
 
 function registerPlaygroundSocket(tableId, userId, socket) {

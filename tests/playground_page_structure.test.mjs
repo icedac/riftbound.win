@@ -34,6 +34,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'value="rune_pool"',
     'id="moveSelectedCard"',
     'id="flipSelectedCard"',
+    'id="scorePoint"',
     'id="eventLog"',
     'id="chatLog"',
     'id="voicePanel"',
@@ -79,6 +80,14 @@ test("playground client keeps Start host-only and locks card actions until activ
   assert.match(js, /function isTableActive/);
   assert.match(js, /els\.startGame\.disabled = !canStartTable\(table\)/);
   assert.match(js, /control\.disabled = !isTableActive\(table\) \|\| controlsDisabled/);
+});
+
+test("playground exposes point scoring controls and summaries", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(js, /score\.point/);
+  assert.match(js, /els\.scorePoint/);
+  assert.match(js, /points \|\| 0/);
 });
 
 test("playground renders Hearthstone-style seats with card images and hover preview", async () => {
