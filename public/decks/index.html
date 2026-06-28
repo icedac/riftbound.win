@@ -37,6 +37,17 @@
 
         <div id="deckStats" class="deck-stats"></div>
         <div id="validationMessages" class="deck-validation" aria-live="polite"></div>
+        <div class="saved-deck-bar" aria-label="Saved decks">
+          <label>
+            Name
+            <input id="deckName" type="text" maxlength="80" placeholder="Deck name" />
+          </label>
+          <button id="saveDeck" type="button">Save</button>
+          <select id="savedDecks" aria-label="Saved deck list"></select>
+          <button id="loadSavedDeck" type="button">Load</button>
+          <button id="refreshSavedDecks" class="ghost-button" type="button">Refresh</button>
+          <span id="savedDeckStatus" class="saved-deck-status" aria-live="polite"></span>
+        </div>
         <div id="deckListTop" class="deck-list-top" aria-label="Deck cards and runes">
           <section class="deck-list-group" data-deck-group="cards">
             <div class="deck-list-group-head">
@@ -100,7 +111,7 @@
     </main>
 
     <script src="/brand.js?v=20260628-brand2" type="module"></script>
-    <script src="/decks.js?v=20260628-deckeditor1" type="module"></script>
+    <script src="/decks.js?v=20260628-saveddecks1" type="module"></script>
     <script src="/auth.js?v=20260628-authsetup1" type="module"></script>
     <script src="/perf.js?v=20260628-perf2" type="module"></script>
   </body>

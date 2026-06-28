@@ -147,6 +147,9 @@ class BoundStatement {
       const [avatarKey, avatarType, avatarData, updatedAt, userId] = this.args;
       const user = this.db.users.find((item) => item.id === userId);
       Object.assign(user, { avatar_key: avatarKey, avatar_type: avatarType, avatar_data: avatarData || "", updated_at: updatedAt });
+    } else if (sql.startsWith("INSERT INTO saved_decks")) {
+      const [id, userId, name, format, deckJson, createdAt, updatedAt] = this.args;
+      this.db.savedDecks.push({ id, user_id: userId, name, format, deck_json: deckJson, created_at: createdAt, updated_at: updatedAt });
     }
     return { success: true };
   }
@@ -159,6 +162,14 @@ class BoundStatement {
     if (this.sql.includes("FROM media WHERE post_id")) {
       const [postId] = this.args;
       return { results: this.db.media.filter((media) => media.post_id === postId) };
+    }
+    if (this.sql.includes("FROM saved_decks WHERE user_id")) {
+      const [userId] = this.args;
+      return {
+        results: this.db.savedDecks
+          .filter((deck) => deck.user_id === userId)
+          .sort((a, b) => b.updated_at - a.updated_at),
+      };
     }
     return { results: [] };
   }
@@ -188,6 +199,7 @@ class InMemoryD1Database {
     this.media = [];
     this.users = [];
     this.sessions = [];
+    this.savedDecks = [];
   }
 
   prepare(sql) {
@@ -254,4 +266,61 @@ test("worker stores small profile avatars in D1 when R2 is not configured", asyn
   assert.equal(avatar.status, 200);
   assert.equal(avatar.headers.get("Content-Type"), "image/png");
   assert.deepEqual(new Uint8Array(await avatar.arrayBuffer()), bytes);
+});
+
+test("worker stores saved decks for the current user", async () => {
+  const db = new InMemoryD1Database();
+  db.users.push({
+    id: "user-1",
+    display_name: "Tester",
+    bio: "",
+    avatar_key: "",
+    avatar_type: "",
+    avatar_data: "",
+    created_at: Date.now(),
+    updated_at: Date.now(),
+  });
+  db.sessions.push({ id: "session-1", user_id: "user-1", expires_at: Date.now() + 60_000 });
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+  const payload = {
+    name: "Ahri Tempo",
+    format: "constructed",
+    deck_json: {
+      main: [{ id: "OGN-066", quantity: 3 }],
+      runes: [{ id: "OGN-R01", quantity: 12 }],
+    },
+  };
+
+  const unauthorized = await worker.fetch(
+    new Request("https://riftbound.kr/api/saved-decks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+    env
+  );
+  assert.equal(unauthorized.status, 401);
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/saved-decks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=session-1" },
+      body: JSON.stringify(payload),
+    }),
+    env
+  );
+  assert.equal(create.status, 201);
+  const created = await create.json();
+  assert.equal(created.deck.name, "Ahri Tempo");
+  assert.equal(created.deck.format, "constructed");
+  assert.equal(created.deck.deck_json.main[0].id, "OGN-066");
+
+  const list = await worker.fetch(
+    new Request("https://riftbound.kr/api/saved-decks", {
+      headers: { Cookie: "rw_session=session-1" },
+    }),
+    env
+  );
+  assert.equal(list.status, 200);
+  assert.deepEqual(await list.json(), { decks: [created.deck] });
 });

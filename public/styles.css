@@ -1326,6 +1326,38 @@ dialog::backdrop {
   color: #d9f99d;
 }
 
+.saved-deck-bar {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) auto minmax(160px, 1fr) auto auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #10161b;
+}
+
+.saved-deck-bar label {
+  min-width: 0;
+}
+
+.saved-deck-bar input,
+.saved-deck-bar select {
+  min-height: 38px;
+}
+
+.saved-deck-bar button {
+  min-height: 38px;
+}
+
+.saved-deck-status {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+  overflow-wrap: anywhere;
+}
+
 .deck-sections {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2030,6 +2062,7 @@ dialog::backdrop {
   }
 
   .deck-rules,
+  .saved-deck-bar,
   .deck-list-top,
   .deck-sections,
   .deck-tools {
@@ -2116,6 +2149,7 @@ dialog::backdrop {
   .filters,
   .deck-filters,
   .deck-rules,
+  .saved-deck-bar,
   .deck-list-top,
   .deck-sections,
   .deck-tools,

@@ -285,3 +285,67 @@ async fn local_community_post_upload_stores_media_and_returns_display_url() {
         "uploaded media should be written under public"
     );
 }
+
+#[tokio::test]
+async fn local_saved_deck_roundtrip_requires_current_user() {
+    let (app, _temp) = test_router();
+    let login = request(
+        &app,
+        Method::GET,
+        "/api/auth/google/start",
+        None,
+        None,
+        Body::empty(),
+    )
+    .await;
+    let cookie = session_cookie(&login);
+    let payload = r#"{
+      "name": "Ahri Tempo",
+      "format": "constructed",
+      "deck_json": {
+        "main": [{"id": "OGN-066", "quantity": 3}],
+        "runes": [{"id": "OGN-R01", "quantity": 12}]
+      }
+    }"#;
+
+    let unauthorized = request(
+        &app,
+        Method::POST,
+        "/api/saved-decks",
+        None,
+        Some("application/json"),
+        Body::from(payload),
+    )
+    .await;
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/saved-decks",
+        Some(&cookie),
+        Some("application/json"),
+        Body::from(payload),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    assert_eq!(created["deck"]["name"], "Ahri Tempo");
+    assert_eq!(created["deck"]["format"], "constructed");
+    assert_eq!(created["deck"]["deck_json"]["main"][0]["id"], "OGN-066");
+
+    let list = json(
+        request(
+            &app,
+            Method::GET,
+            "/api/saved-decks",
+            Some(&cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(list["decks"].as_array().unwrap().len(), 1);
+    assert_eq!(list["decks"][0], created["deck"]);
+}

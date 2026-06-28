@@ -20,6 +20,16 @@ test("deck editor includes dedicated card detail and test draw surfaces", () => 
   assert.match(html, /id="drawOutput"/);
 });
 
+test("deck editor exposes saved deck controls backed by the API", () => {
+  assert.match(html, /id="deckName"/);
+  assert.match(html, /id="saveDeck"/);
+  assert.match(html, /id="savedDecks"/);
+  assert.match(html, /id="loadSavedDeck"/);
+  assert.match(js, /\/api\/saved-decks/);
+  assert.match(js, /saveCurrentDeck/);
+  assert.match(js, /loadSelectedDeck/);
+});
+
 test("deck editor keeps deck list, card picker, and inspector in a first-viewport workspace", () => {
   const workspaceBlock = css.match(/\.deck-workspace\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
   const boardBlock = css.match(/\.deck-board\s*\{[\s\S]*?\n\}/)?.[0] ?? "";

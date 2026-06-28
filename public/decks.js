@@ -34,6 +34,7 @@ const state = {
   color: "",
   type: "",
   deck: new Map(),
+  savedDecks: [],
   selectedId: "",
   draw: null,
 };
@@ -52,6 +53,12 @@ const els = {
   runeDeckList: document.querySelector("#runeDeckList"),
   deckSections: document.querySelector("#deckSections"),
   validation: document.querySelector("#validationMessages"),
+  deckName: document.querySelector("#deckName"),
+  savedDecks: document.querySelector("#savedDecks"),
+  saveDeck: document.querySelector("#saveDeck"),
+  loadSavedDeck: document.querySelector("#loadSavedDeck"),
+  refreshSavedDecks: document.querySelector("#refreshSavedDecks"),
+  savedDeckStatus: document.querySelector("#savedDeckStatus"),
   importText: document.querySelector("#importText"),
   importDeck: document.querySelector("#importDeck"),
   exportText: document.querySelector("#exportText"),
@@ -73,6 +80,7 @@ async function boot() {
   buildFilters();
   bindEvents();
   render();
+  await loadSavedDecks();
 }
 
 function buildFilters() {
@@ -113,6 +121,9 @@ function bindEvents() {
   });
   els.importDeck.addEventListener("click", importDeck);
   els.exportDeck.addEventListener("click", renderExport);
+  els.saveDeck.addEventListener("click", () => saveCurrentDeck());
+  els.loadSavedDeck.addEventListener("click", loadSelectedDeck);
+  els.refreshSavedDecks.addEventListener("click", () => loadSavedDecks());
   els.clearDeck.addEventListener("click", () => {
     state.deck.clear();
     state.draw = null;
@@ -123,6 +134,85 @@ function bindEvents() {
     state.draw = drawTestHand(currentSections(), state.index, { seed: Date.now(), handSize: 4, runeChannels: 2 });
     renderDraw();
   });
+}
+
+async function loadSavedDecks() {
+  try {
+    const response = await fetch("/api/saved-decks", { headers: { Accept: "application/json" } });
+    if (response.status === 401) {
+      state.savedDecks = [];
+      renderSavedDecks("Sign in to save decks");
+      return;
+    }
+    if (!response.ok) throw new Error(`Saved decks failed: ${response.status}`);
+    const data = await response.json();
+    state.savedDecks = Array.isArray(data.decks) ? data.decks : [];
+    renderSavedDecks(state.savedDecks.length ? `${state.savedDecks.length} saved` : "No saved decks");
+  } catch (error) {
+    console.error(error);
+    state.savedDecks = [];
+    renderSavedDecks("Saved decks unavailable");
+  }
+}
+
+function renderSavedDecks(message) {
+  els.savedDecks.replaceChildren(
+    option("", state.savedDecks.length ? "Saved decks" : "No saved decks"),
+    ...state.savedDecks.map((deck) => option(deck.id, deck.name || "Untitled Deck"))
+  );
+  els.savedDecks.disabled = state.savedDecks.length === 0;
+  els.loadSavedDeck.disabled = state.savedDecks.length === 0;
+  setSavedDeckStatus(message);
+}
+
+async function saveCurrentDeck() {
+  const validation = validateRiftboundDeck(currentSections());
+  if (validation.errors.length) {
+    setSavedDeckStatus(validation.errors[0]);
+    return;
+  }
+  const name = els.deckName.value.trim() || "Riftbound Deck";
+  const payload = {
+    name,
+    format: "constructed",
+    deck_json: { entries: deckEntries() },
+  };
+  try {
+    const response = await fetch("/api/saved-decks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (response.status === 401) {
+      setSavedDeckStatus("Sign in to save decks");
+      return;
+    }
+    if (!response.ok) throw new Error(`Save failed: ${response.status}`);
+    const data = await response.json();
+    state.savedDecks = [data.deck, ...state.savedDecks.filter((deck) => deck.id !== data.deck.id)];
+    renderSavedDecks("Saved");
+    els.savedDecks.value = data.deck.id;
+  } catch (error) {
+    console.error(error);
+    setSavedDeckStatus("Could not save deck");
+  }
+}
+
+function loadSelectedDeck() {
+  const deck = state.savedDecks.find((item) => item.id === els.savedDecks.value);
+  if (!deck) return;
+  const entries = entriesFromSavedDeck(deck.deck_json);
+  state.deck.clear();
+  for (const entry of entries) {
+    if (state.index.byId.has(entry.id) && Number(entry.quantity) > 0) {
+      state.deck.set(entry.id, Number(entry.quantity));
+    }
+  }
+  els.deckName.value = deck.name || "";
+  state.draw = null;
+  persistDeck();
+  renderDeckBoard();
+  setSavedDeckStatus("Loaded");
 }
 
 function render() {
@@ -398,6 +488,23 @@ function currentSections() {
 
 function deckEntries() {
   return [...state.deck.entries()].map(([id, quantity]) => ({ id, quantity }));
+}
+
+function entriesFromSavedDeck(deckJson = {}) {
+  if (Array.isArray(deckJson.entries)) return normalizedDeckEntries(deckJson.entries);
+  return normalizedDeckEntries(
+    ["legends", "main", "runes", "battlefields"].flatMap((section) => deckJson[section] || [])
+  );
+}
+
+function normalizedDeckEntries(entries) {
+  return entries
+    .map((entry) => ({ id: String(entry.id || ""), quantity: Number(entry.quantity || 0) }))
+    .filter((entry) => entry.id && entry.quantity > 0);
+}
+
+function setSavedDeckStatus(message) {
+  els.savedDeckStatus.textContent = message || "";
 }
 
 function persistDeck() {

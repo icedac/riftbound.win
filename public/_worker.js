@@ -28,6 +28,8 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/profile/avatar" && request.method === "POST") return updateAvatar(request, env);
   if (url.pathname === "/api/posts" && request.method === "GET") return listPosts(env, url);
   if (url.pathname === "/api/posts" && request.method === "POST") return createPost(request, env);
+  if (url.pathname === "/api/saved-decks" && request.method === "GET") return listSavedDecks(request, env);
+  if (url.pathname === "/api/saved-decks" && request.method === "POST") return createSavedDeck(request, env);
   if (url.pathname.startsWith("/api/posts/") && url.pathname.endsWith("/vote") && request.method === "POST") {
     const id = url.pathname.slice("/api/posts/".length, -"/vote".length);
     return votePost(request, env, decodeURIComponent(id));
@@ -180,6 +182,43 @@ async function votePost(request, env, id) {
   if (amount === 0) return json({ error: "Vote amount required" }, 400);
   await env.DB.prepare("UPDATE posts SET votes = votes + ? WHERE id = ?").bind(amount, id).run();
   return json({ ok: true });
+}
+
+async function listSavedDecks(request, env) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
+  if (!session) return json({ error: "Sign in required" }, 401);
+  const rows = await env.DB.prepare(
+    "SELECT id, name, format, deck_json, created_at, updated_at FROM saved_decks WHERE user_id = ? ORDER BY updated_at DESC"
+  )
+    .bind(session.user.id)
+    .all();
+  return json({ decks: (rows.results || []).map(savedDeckRow) });
+}
+
+async function createSavedDeck(request, env) {
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
+  if (!session) return json({ error: "Sign in required" }, 401);
+  const body = await request.json().catch(() => ({}));
+  if (!body.deck_json || typeof body.deck_json !== "object" || Array.isArray(body.deck_json)) {
+    return json({ error: "Deck JSON must be an object" }, 400);
+  }
+  const now = Date.now();
+  const deck = {
+    id: crypto.randomUUID(),
+    name: cleanText(body.name, 80) || "Untitled Deck",
+    format: cleanText(body.format, 40) || "constructed",
+    deck_json: body.deck_json,
+    created_at: now,
+    updated_at: now,
+  };
+  await env.DB.prepare(
+    "INSERT INTO saved_decks (id, user_id, name, format, deck_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(deck.id, session.user.id, deck.name, deck.format, JSON.stringify(deck.deck_json), now, now)
+    .run();
+  return json({ deck }, 201);
 }
 
 async function startAuth(request, env, provider) {
@@ -397,6 +436,17 @@ async function providerRows(env, userId) {
   return rows.results || [];
 }
 
+function savedDeckRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    format: row.format,
+    deck_json: safeJson(row.deck_json, {}),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
 async function createSession(env, userId) {
   const id = crypto.randomUUID();
   const now = Date.now();
@@ -462,6 +512,8 @@ async function ensureSchema(env) {
     "CREATE INDEX IF NOT EXISTS posts_board_created_idx ON posts(board, created_at)",
     "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, post_id TEXT NOT NULL, key TEXT NOT NULL, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, inline_data TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS media_post_id_idx ON media(post_id)",
+    "CREATE TABLE IF NOT EXISTS saved_decks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, format TEXT NOT NULL, deck_json TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS saved_decks_user_updated_idx ON saved_decks(user_id, updated_at)",
   ];
   for (const statement of statements) {
     await env.DB.prepare(statement).run();
@@ -540,6 +592,14 @@ function cleanText(value, maxLength) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
+}
+
+function safeJson(value, fallback) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
 }
 
 function safeName(value) {

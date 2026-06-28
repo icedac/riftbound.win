@@ -72,6 +72,13 @@ struct VotePayload {
     amount: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+struct SavedDeckPayload {
+    name: Option<String>,
+    format: Option<String>,
+    deck_json: Option<Value>,
+}
+
 #[derive(Debug)]
 struct UploadedFile {
     filename: String,
@@ -103,6 +110,7 @@ pub fn build_local_api_router(options: LocalApiOptions) -> Result<Router> {
         .route("/api/profile/avatar", post(update_avatar))
         .route("/api/posts", get(list_posts).post(create_post))
         .route("/api/posts/{id}/vote", post(vote_post))
+        .route("/api/saved-decks", get(list_saved_decks).post(create_saved_deck))
         .with_state(state))
 }
 
@@ -366,6 +374,59 @@ async fn vote_post(
     }
 }
 
+async fn list_saved_decks(
+    State(state): State<Arc<LocalApiState>>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(user) = current_user_or_response(&state, &headers) else {
+        return unauthorized();
+    };
+    match saved_decks_for_user(&state, &user.id) {
+        Ok(decks) => json_response(json!({ "decks": decks })),
+        Err(error) => server_error(error),
+    }
+}
+
+async fn create_saved_deck(
+    State(state): State<Arc<LocalApiState>>,
+    headers: HeaderMap,
+    Json(payload): Json<SavedDeckPayload>,
+) -> Response {
+    let Some(user) = current_user_or_response(&state, &headers) else {
+        return unauthorized();
+    };
+    let name = clean_text(payload.name.as_deref(), 80)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Untitled Deck".to_string());
+    let format = clean_text(payload.format.as_deref(), 40)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "constructed".to_string());
+    let Some(deck_json) = payload.deck_json else {
+        return bad_request("Deck JSON required");
+    };
+    if !deck_json.is_object() {
+        return bad_request("Deck JSON must be an object");
+    }
+
+    let deck_id = new_id("deck");
+    let now = now_ms();
+    let deck_text = match serde_json::to_string(&deck_json) {
+        Ok(value) => value,
+        Err(error) => return server_error(error.into()),
+    };
+    let result = with_conn(&state, |conn| {
+        conn.execute(
+            "INSERT INTO local_saved_decks (id, user_id, name, format, deck_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            params![deck_id, user.id, name, format, deck_text, now, now],
+        )?;
+        saved_deck_by_id(conn, &deck_id)
+    });
+    match result {
+        Ok(deck) => (StatusCode::CREATED, Json(json!({ "deck": deck }))).into_response(),
+        Err(error) => server_error(error),
+    }
+}
+
 fn init_local_api_db(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         r#"
@@ -417,8 +478,19 @@ fn init_local_api_db(conn: &Connection) -> Result<()> {
             created_at INTEGER NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS local_saved_decks (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            format TEXT NOT NULL,
+            deck_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS local_posts_board_created_idx ON local_posts(board, created_at);
         CREATE INDEX IF NOT EXISTS local_media_post_idx ON local_media(post_id, created_at);
+        CREATE INDEX IF NOT EXISTS local_saved_decks_user_updated_idx ON local_saved_decks(user_id, updated_at);
         "#,
     )?;
     Ok(())
@@ -605,6 +677,40 @@ fn media_for_post(conn: &Connection, post_id: &str) -> rusqlite::Result<Vec<Valu
         }))
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
+}
+
+fn saved_decks_for_user(state: &LocalApiState, user_id: &str) -> Result<Vec<Value>> {
+    with_conn(state, |conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, name, format, deck_json, created_at, updated_at
+               FROM local_saved_decks
+              WHERE user_id = ?
+              ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map(params![user_id], saved_deck_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+fn saved_deck_by_id(conn: &Connection, id: &str) -> Result<Value> {
+    Ok(conn.query_row(
+        "SELECT id, name, format, deck_json, created_at, updated_at FROM local_saved_decks WHERE id = ?",
+        params![id],
+        saved_deck_from_row,
+    )?)
+}
+
+fn saved_deck_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    let deck_text: String = row.get(3)?;
+    let deck_json = serde_json::from_str(&deck_text).unwrap_or_else(|_| json!({}));
+    Ok(json!({
+        "id": row.get::<_, String>(0)?,
+        "name": row.get::<_, String>(1)?,
+        "format": row.get::<_, String>(2)?,
+        "deck_json": deck_json,
+        "created_at": row.get::<_, i64>(4)?,
+        "updated_at": row.get::<_, i64>(5)?,
+    }))
 }
 
 async fn next_file(
