@@ -852,6 +852,7 @@ function createSeatSnapshot(seatIndex, user, deck, joinedAt) {
     deck_name: deck.name,
     deck_snapshot: deck.deck_json,
     joined_at: joinedAt,
+    points: 0,
     zones: buildPlaygroundZones(deck.deck_json),
   };
 }
@@ -860,6 +861,7 @@ function buildPlaygroundZones(deckJson = {}) {
   const zones = {
     main_deck: [],
     rune_deck: [],
+    rune_pool: [],
     hand: [],
     battlefield: [],
     discard: [],
@@ -914,6 +916,7 @@ function activePlaygroundEventTypes() {
 function applyPlaygroundEvent(table, event) {
   if (!Array.isArray(table.events)) table.events = [];
   if (event.type === "game.start") {
+    if (!table.started_at) drawOpeningHands(table);
     table.status = "active";
     table.started_at ||= event.created_at;
     table.turn_player_id = event.payload.first_player_id || table.turn_player_id || table.seats?.[0]?.user_id || "";
@@ -921,7 +924,10 @@ function applyPlaygroundEvent(table, event) {
   if (event.type === "card.move") applyCardMove(table, event.payload);
   if (event.type === "card.reveal") applyCardReveal(table, event.payload);
   if (event.type === "card.flip") applyCardFlip(table, event.payload);
-  if (event.type === "turn.pass") table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
+  if (event.type === "turn.pass") {
+    table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
+    beginTurn(table, table.turn_player_id);
+  }
   if (event.type === "chat.message") {
     if (!Array.isArray(table.chat)) table.chat = [];
     table.chat.push({
@@ -941,6 +947,22 @@ function applyPlaygroundEvent(table, event) {
   }
   if (event.type === "result.propose") applyResultProposal(table, event);
   table.events.push(event);
+}
+
+function drawOpeningHands(table) {
+  for (const seat of table.seats || []) moveCards(seat, "main_deck", "hand", 4);
+}
+
+function beginTurn(table, userId) {
+  const seat = (table.seats || []).find((item) => item.user_id === userId);
+  if (!seat) return;
+  moveCards(seat, "rune_deck", "rune_pool", 2);
+  moveCards(seat, "main_deck", "hand", 1);
+}
+
+function moveCards(seat, from, to, count) {
+  if (!seat?.zones?.[from] || !seat.zones[to]) return;
+  seat.zones[to].push(...seat.zones[from].splice(0, Math.max(0, Math.min(count, seat.zones[from].length))));
 }
 
 function applyCardMove(table, payload = {}) {

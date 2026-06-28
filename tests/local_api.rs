@@ -470,6 +470,14 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
             .len(),
         5
     );
+    assert_eq!(
+        created["table"]["seats"][0]["zones"]["rune_pool"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(created["table"]["seats"][0]["points"], 0);
 
     let lobby = json(
         request(
@@ -528,6 +536,27 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     let started = json(start).await;
     assert_eq!(started["event"]["sequence"], 1);
     assert_eq!(started["table"]["status"], "active");
+    assert_eq!(
+        started["table"]["seats"][0]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        started["table"]["seats"][1]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        started["table"]["seats"][0]["zones"]["main_deck"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
 
     let move_card = request(
         &app,
@@ -546,16 +575,16 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
             .as_array()
             .unwrap()
             .len(),
-        2
+        5
     );
     assert_eq!(
         moved["table"]["seats"][0]["zones"]["main_deck"]
             .as_array()
             .unwrap()
             .len(),
-        3
+        0
     );
-    let selected_instance = moved["table"]["seats"][0]["zones"]["hand"][1]["instance_id"]
+    let selected_instance = moved["table"]["seats"][0]["zones"]["hand"][4]["instance_id"]
         .as_str()
         .expect("selected card instance")
         .to_string();
@@ -583,7 +612,7 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
             .as_array()
             .unwrap()
             .len(),
-        1
+        4
     );
 
     let flip_selected = request(
@@ -603,6 +632,37 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     assert_eq!(
         flipped["table"]["seats"][0]["zones"]["battlefield"][0]["face_up"],
         false
+    );
+
+    let pass_turn = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"turn.pass","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(pass_turn.status(), StatusCode::CREATED);
+    let passed = json(pass_turn).await;
+    assert_eq!(passed["event"]["sequence"], 5);
+    let guest_user_id = passed["table"]["seats"][1]["user_id"]
+        .as_str()
+        .expect("guest user id");
+    assert_eq!(passed["table"]["turn_player_id"], guest_user_id);
+    assert_eq!(
+        passed["table"]["seats"][1]["zones"]["hand"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(
+        passed["table"]["seats"][1]["zones"]["rune_pool"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
     );
 
     let forged_snapshot = request(
@@ -628,9 +688,10 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         .await,
     )
     .await;
-    assert_eq!(events["events"].as_array().unwrap().len(), 4);
+    assert_eq!(events["events"].as_array().unwrap().len(), 5);
     assert_eq!(events["events"][1]["type"], "card.move");
     assert_eq!(events["events"][3]["type"], "card.flip");
+    assert_eq!(events["events"][4]["type"], "turn.pass");
 
     let table = json(
         request(
@@ -644,13 +705,13 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         .await,
     )
     .await;
-    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 4);
+    assert_eq!(table["table"]["events"].as_array().unwrap().len(), 5);
     assert_eq!(
         table["table"]["seats"][0]["zones"]["hand"]
             .as_array()
             .unwrap()
             .len(),
-        1
+        4
     );
     assert_eq!(
         table["table"]["seats"][0]["zones"]["battlefield"][0]["instance_id"],

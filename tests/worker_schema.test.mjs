@@ -622,6 +622,8 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const tableId = created.table.id;
   assert.equal(created.table.status, "waiting");
   assert.equal(created.table.seats[0].zones.main_deck.length, 5);
+  assert.equal(created.table.seats[0].zones.rune_pool.length, 0);
+  assert.equal(created.table.seats[0].points, 0);
 
   const join = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/join`, {
@@ -658,6 +660,9 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const started = await start.json();
   assert.equal(started.event.sequence, 1);
   assert.equal(started.table.status, "active");
+  assert.equal(started.table.seats[0].zones.hand.length, 4);
+  assert.equal(started.table.seats[1].zones.hand.length, 4);
+  assert.equal(started.table.seats[0].zones.main_deck.length, 1);
 
   const move = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
@@ -670,9 +675,9 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(move.status, 201);
   const moved = await move.json();
   assert.equal(moved.event.sequence, 2);
-  assert.equal(moved.table.seats[0].zones.hand.length, 2);
-  assert.equal(moved.table.seats[0].zones.main_deck.length, 3);
-  const selectedInstance = moved.table.seats[0].zones.hand[1].instance_id;
+  assert.equal(moved.table.seats[0].zones.hand.length, 5);
+  assert.equal(moved.table.seats[0].zones.main_deck.length, 0);
+  const selectedInstance = moved.table.seats[0].zones.hand[4].instance_id;
 
   const moveSelected = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
@@ -686,7 +691,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const selectedMoved = await moveSelected.json();
   assert.equal(selectedMoved.event.sequence, 3);
   assert.equal(selectedMoved.table.seats[0].zones.battlefield[0].instance_id, selectedInstance);
-  assert.equal(selectedMoved.table.seats[0].zones.hand.length, 1);
+  assert.equal(selectedMoved.table.seats[0].zones.hand.length, 4);
 
   const flipSelected = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
@@ -700,6 +705,21 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const flipped = await flipSelected.json();
   assert.equal(flipped.event.sequence, 4);
   assert.equal(flipped.table.seats[0].zones.battlefield[0].face_up, false);
+
+  const passTurn = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "turn.pass", payload: {} }),
+    }),
+    env
+  );
+  assert.equal(passTurn.status, 201);
+  const passed = await passTurn.json();
+  assert.equal(passed.event.sequence, 5);
+  assert.equal(passed.table.turn_player_id, "guest-user");
+  assert.equal(passed.table.seats[1].zones.hand.length, 5);
+  assert.equal(passed.table.seats[1].zones.rune_pool.length, 2);
 
   const forged = await worker.fetch(
     new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
@@ -719,6 +739,7 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   );
   assert.equal(events.status, 200);
   const eventList = await events.json();
-  assert.equal(eventList.events.length, 4);
+  assert.equal(eventList.events.length, 5);
   assert.equal(eventList.events[3].type, "card.flip");
+  assert.equal(eventList.events[4].type, "turn.pass");
 });

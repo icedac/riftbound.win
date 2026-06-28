@@ -1167,6 +1167,7 @@ fn create_seat_snapshot(
         "deck_name": deck.name,
         "deck_snapshot": deck.deck_json,
         "joined_at": joined_at,
+        "points": 0,
         "zones": build_playground_zones(&deck.deck_json),
     })
 }
@@ -1190,6 +1191,7 @@ fn build_playground_zones(deck_json: &Value) -> Value {
     json!({
         "main_deck": main_deck,
         "rune_deck": rune_deck,
+        "rune_pool": [],
         "hand": [],
         "battlefield": [],
         "discard": [],
@@ -1300,6 +1302,9 @@ fn active_playground_event_type(value: &str) -> bool {
 fn apply_playground_event(table: &mut Value, event: &Value) {
     let event_type = event["type"].as_str().unwrap_or_default();
     if event_type == "game.start" {
+        if table.get("started_at").is_none_or(Value::is_null) {
+            draw_opening_hands(table);
+        }
         table["status"] = json!("active");
         if table.get("started_at").is_none_or(Value::is_null) {
             table["started_at"] = event["created_at"].clone();
@@ -1321,9 +1326,19 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         apply_card_flip(table, &event["payload"]);
     }
     if event_type == "turn.pass" {
-        if let Some(to_user_id) = event["payload"].get("to_user_id").and_then(Value::as_str) {
-            table["turn_player_id"] = json!(to_user_id);
-        }
+        let to_user_id = event["payload"]
+            .get("to_user_id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                next_playground_user_id(table, event["actor_id"].as_str().unwrap_or_default())
+            });
+        table["turn_player_id"] = json!(to_user_id);
+        let active_user_id = table["turn_player_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        begin_playground_turn(table, &active_user_id);
     }
     if event_type == "chat.message" {
         let text = event["payload"]
@@ -1364,6 +1379,65 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
         apply_result_proposal(table, event);
     }
     push_array_value(table, "events", event.clone());
+}
+
+fn draw_opening_hands(table: &mut Value) {
+    let seat_count = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    for seat_index in 0..seat_count {
+        move_playground_cards(table, seat_index, "main_deck", "hand", 4);
+    }
+}
+
+fn begin_playground_turn(table: &mut Value, user_id: &str) {
+    let Some(seat_index) = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .and_then(|seats| {
+            seats
+                .iter()
+                .position(|seat| seat.get("user_id").and_then(Value::as_str) == Some(user_id))
+        })
+    else {
+        return;
+    };
+    move_playground_cards(table, seat_index, "rune_deck", "rune_pool", 2);
+    move_playground_cards(table, seat_index, "main_deck", "hand", 1);
+}
+
+fn move_playground_cards(table: &mut Value, seat_index: usize, from: &str, to: &str, count: usize) {
+    apply_card_move(
+        table,
+        &json!({
+            "seat_index": seat_index,
+            "from": from,
+            "to": to,
+            "count": count,
+        }),
+    );
+}
+
+fn next_playground_user_id(table: &Value, actor_id: &str) -> String {
+    let seats = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if seats.is_empty() {
+        return actor_id.to_string();
+    }
+    let current = seats
+        .iter()
+        .position(|seat| seat.get("user_id").and_then(Value::as_str) == Some(actor_id))
+        .unwrap_or(0);
+    seats[(current + 1) % seats.len()]
+        .get("user_id")
+        .and_then(Value::as_str)
+        .unwrap_or(actor_id)
+        .to_string()
 }
 
 fn apply_card_move(table: &mut Value, payload: &Value) {

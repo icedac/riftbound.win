@@ -26,9 +26,12 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="playgroundDecks"',
     'id="playgroundTable"',
     'id="tableZones"',
+    'id="drawOpening"',
+    'id="drawRune"',
     'id="revealCard"',
     'id="selectedCardStatus"',
     'id="moveToZone"',
+    'value="rune_pool"',
     'id="moveSelectedCard"',
     'id="flipSelectedCard"',
     'id="eventLog"',
@@ -94,4 +97,14 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(css, /\.card-hover-preview/);
   assert.match(css, /\.seat-board\.is-current-player/);
   assert.match(css, /\.card-chip img/);
+});
+
+test("playground labels setup-aware draw and rune channel actions", async () => {
+  const html = await readFile(playgroundHtmlPath, "utf8");
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(html, /id="drawOpening"[^>]*>Draw 1<\/button>/);
+  assert.match(html, /id="drawRune"[^>]*>Channel 2 Runes<\/button>/);
+  assert.match(js, /from: "rune_deck", to: "rune_pool", count: 2/);
+  assert.match(js, /from: "main_deck", to: "hand", count: 1/);
 });

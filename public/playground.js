@@ -113,8 +113,8 @@ function bindEvents() {
     renderCardPreview();
   });
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
-  els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 4 }));
-  els.drawRune.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "rune_deck", to: "revealed", count: 1 }));
+  els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 1 }));
+  els.drawRune.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "rune_deck", to: "rune_pool", count: 2 }));
   els.revealCard.addEventListener("click", revealSelectedCard);
   els.moveBattlefield.addEventListener("click", () => (selectedCardRecord() ? moveSelectedCardTo("battlefield") : appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 })));
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
@@ -510,7 +510,7 @@ function seatZones(seat) {
   root.append(text("h3", `${seat.display_name} · ${seat.deck_name}`));
   const zones = document.createElement("div");
   zones.className = "zone-grid";
-  for (const key of ["main_deck", "rune_deck", "hand", "battlefield", "discard", "removed", "revealed"]) {
+  for (const key of ["main_deck", "rune_deck", "rune_pool", "hand", "battlefield", "discard", "removed", "revealed"]) {
     const zone = document.createElement("div");
     zone.className = "zone-cell";
     zone.append(text("strong", labelZone(key)), text("span", `${seat.zones?.[key]?.length || 0}`));

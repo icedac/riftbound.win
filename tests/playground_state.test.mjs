@@ -38,6 +38,8 @@ test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   assert.deepEqual(table.seats[0].zones.hand, []);
   assert.equal(table.seats[0].zones.main_deck.length, 5);
   assert.equal(table.seats[0].zones.rune_deck.length, 2);
+  assert.deepEqual(table.seats[0].zones.rune_pool, []);
+  assert.equal(table.seats[0].points, 0);
 });
 
 test("joined tables append ordered events, preserve chat and voice state, and replay the log", () => {
@@ -48,6 +50,11 @@ test("joined tables append ordered events, preserve chat and voice state, and re
   assert.equal(table.seats.length, 2);
 
   table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  assert.equal(table.seats[0].zones.hand.length, 4);
+  assert.equal(table.seats[1].zones.hand.length, 4);
+  assert.equal(table.seats[0].zones.main_deck.length, 1);
+  assert.equal(table.seats[1].zones.main_deck.length, 1);
+
   table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 }, now: 1300 });
   table = appendTableEvent(table, { actorId: guest.id, type: "chat.message", payload: { text: "ready" }, now: 1400 });
   table = updateVoicePresence(table, { userId: guest.id, muted: false, talking: true, now: 1500 });
@@ -56,8 +63,10 @@ test("joined tables append ordered events, preserve chat and voice state, and re
 
   assert.equal(table.status, "active");
   assert.deepEqual(table.events.map((event) => event.sequence), [1, 2, 3, 4, 5, 6]);
-  assert.equal(table.seats[0].zones.hand.length, 2);
-  assert.equal(table.seats[0].zones.main_deck.length, 3);
+  assert.equal(table.seats[0].zones.hand.length, 5);
+  assert.equal(table.seats[0].zones.main_deck.length, 0);
+  assert.equal(table.seats[1].zones.hand.length, 5);
+  assert.equal(table.seats[1].zones.rune_pool.length, 2);
   assert.equal(table.chat[0].text, "ready");
   assert.equal(table.voice[guest.id].talking, true);
   assert.equal(table.turn_player_id, guest.id);
