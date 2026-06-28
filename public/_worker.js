@@ -984,11 +984,21 @@ function hostUserId(table) {
 }
 
 function activePlaygroundEventTypes() {
-  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "turn.pass", "score.point", "result.propose", "player.concede"]);
+  return new Set([
+    "card.move",
+    "card.reveal",
+    "card.flip",
+    "card.exhaust",
+    "battlefield.claim",
+    "turn.pass",
+    "score.point",
+    "result.propose",
+    "player.concede",
+  ]);
 }
 
 function turnScopedPlaygroundEventTypes() {
-  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "turn.pass", "score.point"]);
+  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "battlefield.claim", "turn.pass", "score.point"]);
 }
 
 function applyPlaygroundEvent(table, event) {
@@ -1003,6 +1013,7 @@ function applyPlaygroundEvent(table, event) {
   if (event.type === "card.reveal") applyCardReveal(table, event.payload);
   if (event.type === "card.flip") applyCardFlip(table, event.payload);
   if (event.type === "card.exhaust") applyCardExhaust(table, event.payload);
+  if (event.type === "battlefield.claim") applyBattlefieldClaim(table, event);
   if (event.type === "turn.pass") {
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
@@ -1099,6 +1110,13 @@ function applyCardExhaust(table, payload = {}) {
   cards[index].exhausted = typeof payload.exhausted === "boolean" ? payload.exhausted : !currentExhausted;
 }
 
+function applyBattlefieldClaim(table, event) {
+  const battlefield = selectedZoneCard(table, event.payload || {}, "battlefields");
+  if (!battlefield) return;
+  battlefield.controller_user_id = event.actor_id || "";
+  battlefield.claimed_at = event.created_at;
+}
+
 function selectedCardIndex(cards = [], payload = {}) {
   if (payload.instance_id) return cards.findIndex((card) => card.instance_id === payload.instance_id);
   if (payload.card_id) return cards.findIndex((card) => card.id === payload.card_id);
@@ -1137,7 +1155,17 @@ function applyScorePoint(table, event) {
     (Number.isInteger(Number(payload.seat_index)) ? seats[Number(payload.seat_index)] : null);
   if (!seat) return;
   seat.points = Math.max(0, Number(seat.points || 0) + scoreAmount(payload.amount));
+  markScoredBattlefield(table, payload, seat, event);
   applyVictoryCheck(table, seat, event);
+}
+
+function markScoredBattlefield(table, payload = {}, scoringSeat, event) {
+  if (payload.source !== "battlefield" || !payload.battlefield_instance_id) return;
+  const battlefield = findZoneCard(table, "battlefields", payload.battlefield_instance_id);
+  if (!battlefield) return;
+  battlefield.controller_user_id ||= scoringSeat.user_id;
+  battlefield.last_scored_by = scoringSeat.user_id;
+  battlefield.last_scored_at = event.created_at;
 }
 
 function applyVictoryCheck(table, scoringSeat, event) {
@@ -1172,6 +1200,23 @@ function nextSeatUserId(table, actorId) {
   return seats[(current + 1) % seats.length]?.user_id || table.turn_player_id || "";
 }
 
+function selectedZoneCard(table, payload = {}, fallbackZone = "battlefield") {
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const zone = zoneName(payload.zone || fallbackZone);
+  const cards = seat?.zones?.[zone];
+  if (!cards) return null;
+  const index = selectedCardIndex(cards, payload);
+  return index >= 0 ? cards[index] : null;
+}
+
+function findZoneCard(table, zone, instanceId) {
+  for (const seat of table.seats || []) {
+    const card = (seat.zones?.[zone] || []).find((item) => item.instance_id === instanceId);
+    if (card) return card;
+  }
+  return null;
+}
+
 function validPlaygroundEventType(type) {
   return new Set([
     "game.start",
@@ -1179,6 +1224,7 @@ function validPlaygroundEventType(type) {
     "card.reveal",
     "card.flip",
     "card.exhaust",
+    "battlefield.claim",
     "turn.pass",
     "chat.message",
     "voice.presence",

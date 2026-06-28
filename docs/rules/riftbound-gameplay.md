@@ -43,6 +43,7 @@ Playground implication:
 - `turn.pass` is valid as the coarse first version.
 - Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
 - Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes and draws 1.
+- Battlefield control is modeled manually with `battlefield.claim`, which marks a public battlefield card with `controller_user_id`. Scoring from a selected battlefield sends `score.point` with `source: "battlefield"` and stores `last_scored_by` on that battlefield for logs and replay.
 - Later, replace the single pass button with phase/task buttons: ready/awaken, hold score, channel 2 runes, draw 1, main actions, end.
 - Store turn state on the table snapshot, not only in the event log, so replay can rebuild it deterministically.
 
@@ -60,6 +61,7 @@ Playground implication:
 Playground implication:
 - Current `card.move`, `card.reveal`, and `card.flip` are the right primitive operations for manual play.
 - `card.exhaust` is the current primitive for sideways/ready state. It is intentionally manual; later resource payment automation can consume this same state rather than replacing the event log format.
+- `battlefield.claim` plus battlefield-sourced `score.point` is the current primitive for manual hold/conquer scoring. Later battlefield control automation should reduce into these same event shapes.
 - Add higher-level buttons only when their event payloads can still replay into the same primitive zone changes.
 
 ## Victory And Results
@@ -72,13 +74,12 @@ Playground implication:
 
 Playground implication:
 - Keep mutual result confirmation as a correction/override path.
-- The next step is to wire battlefield control and hold/conquer checks into `score.point` instead of using only the manual Score Point control.
+- The next step is to add explicit phase windows and stronger battlefield legality checks around the current manual claim/score flow.
 
 ## Engine Backlog
 
 - Add explicit table phases and temporary rune/resource pool state separate from channeled rune cards.
 - Add public/private/secret card masking.
-- Add battlefield objects and control state.
 - Add automated battlefield scoring and control checks.
 - Add action legality for turn player, reactions, chain, and showdown state.
 - Add replay snapshots or deterministic reducers for every new event type.

@@ -431,6 +431,32 @@ async fn create_test_deck_with_runes(
     json(response).await["deck"].clone()
 }
 
+async fn create_battlefield_test_deck(app: &axum::Router, cookie: &str, name: &str) -> Value {
+    let payload = format!(
+        r#"{{
+          "name": "{name}",
+          "format": "constructed",
+          "deck_json": {{
+            "legends": [{{"id": "UNL-236-STAR", "quantity": 1}}],
+            "main": [{{"id": "OGN-001", "quantity": 5}}],
+            "runes": [{{"id": "OGN-R01", "quantity": 4}}],
+            "battlefields": [{{"id": "BF-001", "quantity": 1}}]
+          }}
+        }}"#
+    );
+    let response = request(
+        app,
+        Method::POST,
+        "/api/saved-decks",
+        Some(cookie),
+        Some("application/json"),
+        Body::from(payload),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    json(response).await["deck"].clone()
+}
+
 #[tokio::test]
 async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     let (app, _temp) = test_router();
@@ -982,6 +1008,99 @@ async fn local_playground_turn_start_readies_channeled_runes() {
         .find(|card| card["instance_id"] == selected_rune)
         .unwrap();
     assert_eq!(readied_rune["exhausted"], false);
+}
+
+#[tokio::test]
+async fn local_playground_battlefield_claim_scores_source_points() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_battlefield_test_deck(&app, &host_cookie, "Host Battlefields").await;
+    let guest_deck = create_battlefield_test_deck(&app, &guest_cookie, "Guest Battlefields").await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+    let started = json(start).await;
+    let battlefield_instance =
+        started["table"]["seats"][0]["zones"]["battlefields"][0]["instance_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+    let claim = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"battlefield.claim","payload":{{"seat_index":0,"zone":"battlefields","instance_id":"{battlefield_instance}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(claim.status(), StatusCode::CREATED);
+    let claimed = json(claim).await;
+    assert_eq!(
+        claimed["table"]["seats"][0]["zones"]["battlefields"][0]["controller_user_id"],
+        claimed["table"]["seats"][0]["user_id"]
+    );
+
+    let score = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"score.point","payload":{{"amount":1,"source":"battlefield","battlefield_instance_id":"{battlefield_instance}"}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(score.status(), StatusCode::CREATED);
+    let scored = json(score).await;
+    assert_eq!(scored["table"]["seats"][0]["points"], 1);
+    assert_eq!(
+        scored["table"]["seats"][0]["zones"]["battlefields"][0]["last_scored_by"],
+        scored["table"]["seats"][0]["user_id"]
+    );
 }
 
 #[tokio::test]

@@ -35,6 +35,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="moveSelectedCard"',
     'id="flipSelectedCard"',
     'id="exhaustSelectedCard"',
+    'id="claimBattlefield"',
     'value="base"',
     'value="legend_zone"',
     'value="battlefields"',
@@ -66,6 +67,7 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.match(js, /instance_id/);
   assert.match(js, /card\.flip/);
   assert.match(js, /card\.exhaust/);
+  assert.match(js, /battlefield\.claim/);
   assert.match(js, /WebSocket/);
   assert.match(js, /RTCPeerConnection/);
   assert.doesNotMatch(js, /localStorage/);
@@ -122,6 +124,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /PLAYGROUND_ZONE_ORDER/);
   assert.match(js, /legend_zone/);
   assert.match(js, /battlefields/);
+  assert.match(js, /controller_user_id/);
   assert.match(js, /base/);
   assert.match(js, /function renderCardPreview/);
   assert.match(js, /isHiddenCard/);

@@ -26,6 +26,12 @@ function savedDeck(id = "deck-1", runeQuantity = 2) {
   };
 }
 
+function battlefieldDeck(id = "deck-1") {
+  const deck = savedDeck(id);
+  deck.deck_json.entries.push({ id: "BF-001", quantity: 1, section: "battlefields" });
+  return deck;
+}
+
 test("createPlaygroundTable locks a saved deck snapshot for the host", () => {
   const deck = savedDeck();
   const table = createPlaygroundTable({ id: "table-1", savedDeck: deck, user: host, now: 1000 });
@@ -67,6 +73,32 @@ test("score point normalizes invalid amounts to one point", () => {
 
   assert.equal(table.seats[0].points, 1);
   assert.equal(replayTableEvents(table.events)[0].summary, "Score point: +1");
+});
+
+test("battlefield claims mark control and battlefield scoring records the source", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: battlefieldDeck(), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: battlefieldDeck("deck-2"), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  const battlefield = table.seats[0].zones.battlefields[0];
+
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "battlefield.claim",
+    payload: { seat_index: 0, zone: "battlefields", instance_id: battlefield.instance_id },
+    now: 1300,
+  });
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "score.point",
+    payload: { amount: 1, source: "battlefield", battlefield_instance_id: battlefield.instance_id },
+    now: 1400,
+  });
+
+  assert.equal(table.seats[0].zones.battlefields[0].controller_user_id, host.id);
+  assert.equal(table.seats[0].zones.battlefields[0].last_scored_by, host.id);
+  assert.equal(table.seats[0].points, 1);
+  assert.equal(replayTableEvents(table.events)[2].summary, "Score battlefield: +1");
+  assert.equal(buildReplayFrames(table).at(-1).table.seats[0].zones.battlefields[0].controller_user_id, host.id);
 });
 
 test("player concession completes a table for the opponent", () => {

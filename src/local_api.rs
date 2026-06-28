@@ -1477,6 +1477,7 @@ fn active_playground_event_type(value: &str) -> bool {
             | "card.reveal"
             | "card.flip"
             | "card.exhaust"
+            | "battlefield.claim"
             | "turn.pass"
             | "score.point"
             | "result.propose"
@@ -1487,7 +1488,13 @@ fn active_playground_event_type(value: &str) -> bool {
 fn turn_scoped_playground_event_type(value: &str) -> bool {
     matches!(
         value,
-        "card.move" | "card.reveal" | "card.flip" | "card.exhaust" | "turn.pass" | "score.point"
+        "card.move"
+            | "card.reveal"
+            | "card.flip"
+            | "card.exhaust"
+            | "battlefield.claim"
+            | "turn.pass"
+            | "score.point"
     )
 }
 
@@ -1519,6 +1526,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     }
     if event_type == "card.exhaust" {
         apply_card_exhaust(table, &event["payload"]);
+    }
+    if event_type == "battlefield.claim" {
+        apply_battlefield_claim(table, event);
     }
     if event_type == "turn.pass" {
         let to_user_id = event["payload"]
@@ -1841,6 +1851,45 @@ fn apply_card_exhaust(table: &mut Value, payload: &Value) {
     }
 }
 
+fn apply_battlefield_claim(table: &mut Value, event: &Value) {
+    let actor_id = event["actor_id"].as_str().unwrap_or_default().to_string();
+    let created_at = event["created_at"].clone();
+    let Some(card) = selected_zone_card(table, &event["payload"], "battlefields") else {
+        return;
+    };
+    if let Some(card) = card.as_object_mut() {
+        card.insert("controller_user_id".to_string(), json!(actor_id));
+        card.insert("claimed_at".to_string(), created_at);
+    }
+}
+
+fn selected_zone_card<'a>(
+    table: &'a mut Value,
+    payload: &Value,
+    fallback_zone: &str,
+) -> Option<&'a mut Value> {
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let zone = zone_name(
+        payload
+            .get("zone")
+            .and_then(Value::as_str)
+            .unwrap_or(fallback_zone),
+    );
+    let zone_cards = table
+        .get_mut("seats")?
+        .as_array_mut()?
+        .get_mut(seat_index)?
+        .get_mut("zones")?
+        .as_object_mut()?
+        .get_mut(&zone)?
+        .as_array_mut()?;
+    let index = selected_card_index(zone_cards, payload)?;
+    zone_cards.get_mut(index)
+}
+
 fn selected_card_index(cards: &[Value], payload: &Value) -> Option<usize> {
     if let Some(instance_id) = payload.get("instance_id").and_then(Value::as_str) {
         return cards
@@ -1952,7 +2001,68 @@ fn apply_score_point(table: &mut Value, event: &Value) {
     if let Some(seat_object) = seat.as_object_mut() {
         seat_object.insert("points".to_string(), json!(points.max(0)));
     }
+    mark_scored_battlefield(table, payload, seat_index, event);
     apply_victory_check(table, seat_index, event);
+}
+
+fn mark_scored_battlefield(
+    table: &mut Value,
+    payload: &Value,
+    scoring_seat_index: usize,
+    event: &Value,
+) {
+    if payload.get("source").and_then(Value::as_str) != Some("battlefield") {
+        return;
+    }
+    let Some(instance_id) = payload
+        .get("battlefield_instance_id")
+        .and_then(Value::as_str)
+    else {
+        return;
+    };
+    let scoring_user_id = table
+        .get("seats")
+        .and_then(Value::as_array)
+        .and_then(|seats| seats.get(scoring_seat_index))
+        .and_then(|seat| seat.get("user_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let Some(card) = find_zone_card(table, "battlefields", instance_id) else {
+        return;
+    };
+    if let Some(card) = card.as_object_mut() {
+        if !card.contains_key("controller_user_id") {
+            card.insert("controller_user_id".to_string(), json!(scoring_user_id));
+        }
+        card.insert("last_scored_by".to_string(), json!(scoring_user_id));
+        card.insert("last_scored_at".to_string(), event["created_at"].clone());
+    }
+}
+
+fn find_zone_card<'a>(
+    table: &'a mut Value,
+    zone: &str,
+    instance_id: &str,
+) -> Option<&'a mut Value> {
+    let seats = table.get_mut("seats")?.as_array_mut()?;
+    for seat in seats {
+        let Some(cards) = seat
+            .get_mut("zones")
+            .and_then(Value::as_object_mut)
+            .and_then(|zones| zones.get_mut(zone))
+            .and_then(Value::as_array_mut)
+        else {
+            continue;
+        };
+        if let Some(index) = cards
+            .iter()
+            .position(|card| card["instance_id"] == instance_id)
+        {
+            return cards.get_mut(index);
+        }
+    }
+    None
 }
 
 fn score_target_seat_index(table: &Value, target_user_id: &str, payload: &Value) -> Option<usize> {
@@ -2037,6 +2147,7 @@ fn valid_playground_event_type(value: &str) -> bool {
             | "card.reveal"
             | "card.flip"
             | "card.exhaust"
+            | "battlefield.claim"
             | "turn.pass"
             | "chat.message"
             | "voice.presence"

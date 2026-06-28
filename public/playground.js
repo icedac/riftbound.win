@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground9";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground10";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -78,6 +78,7 @@ const els = {
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
   flipSelectedCard: document.querySelector("#flipSelectedCard"),
   exhaustSelectedCard: document.querySelector("#exhaustSelectedCard"),
+  claimBattlefield: document.querySelector("#claimBattlefield"),
   cardPreview: document.querySelector("#cardHoverPreview"),
   passTurn: document.querySelector("#passTurn"),
 };
@@ -143,7 +144,8 @@ function bindEvents() {
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
   els.exhaustSelectedCard.addEventListener("click", exhaustSelectedCard);
-  els.scorePoint.addEventListener("click", () => appendAction("score.point", { amount: 1, source: "manual" }));
+  els.claimBattlefield.addEventListener("click", claimSelectedBattlefield);
+  els.scorePoint.addEventListener("click", () => appendAction("score.point", scorePayload()));
   els.concedeGame.addEventListener("click", () => appendAction("player.concede", { user_id: currentUserId() }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
   els.chatForm.addEventListener("submit", (event) => {
@@ -287,6 +289,28 @@ async function exhaustSelectedCard() {
     instance_id: selected.instanceId,
     exhausted: selected.card.exhausted !== true,
   });
+}
+
+async function claimSelectedBattlefield() {
+  const selected = selectedCardRecord();
+  if (!selected || selected.zone !== "battlefields") return;
+  await appendAction("battlefield.claim", {
+    seat_index: selected.seatIndex,
+    zone: selected.zone,
+    instance_id: selected.instanceId,
+  });
+}
+
+function scorePayload() {
+  const selected = selectedCardRecord();
+  if (selected?.zone === "battlefields") {
+    return {
+      amount: 1,
+      source: "battlefield",
+      battlefield_instance_id: selected.instanceId,
+    };
+  }
+  return { amount: 1, source: "manual" };
 }
 
 async function toggleVoice() {
@@ -517,9 +541,10 @@ function renderTable() {
     control.disabled = !isTableActive(table) || controlsDisabled;
   }
   els.toggleVoice.disabled = controlsDisabled;
-  for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard]) {
+  for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard, els.claimBattlefield]) {
     control.disabled = !isTableActive(table) || controlsDisabled || !selectedCardRecord();
   }
+  els.claimBattlefield.disabled = els.claimBattlefield.disabled || selectedCardRecord()?.zone !== "battlefields";
   if (!table) {
     state.selectedCard = null;
     els.tableTitle.textContent = "No table selected";
@@ -710,7 +735,8 @@ function eventSummary(event) {
   if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
-  if (event.type === "score.point") return `score +${event.payload?.amount || 1}`;
+  if (event.type === "battlefield.claim") return "battlefield claimed";
+  if (event.type === "score.point") return `${event.payload?.source === "battlefield" ? "score battlefield" : "score"} +${event.payload?.amount || 1}`;
   if (event.type === "player.concede") return "conceded";
   if (event.type === "turn.pass") return `pass to ${playerName(currentTable(), event.payload?.to_user_id)}`;
   if (event.type === "result.propose") return `result ${event.payload?.result || ""}`;
@@ -785,6 +811,7 @@ function cardChip(card, seat, zone) {
     hidden ? "hidden-card" : "",
     card.face_up === false ? "face-down" : "",
     card.exhausted === true ? "exhausted" : "",
+    card.controller_user_id ? "controlled" : "",
     selected?.instanceId === card.instance_id ? "selected" : "",
   ]
     .filter(Boolean)
@@ -810,7 +837,7 @@ function cardChip(card, seat, zone) {
   } else {
     node.textContent = cardLabel(card);
   }
-  node.title = cardLabel(card);
+  node.title = card.controller_user_id ? `${cardLabel(card)} · controlled by ${playerName(currentTable(), card.controller_user_id)}` : cardLabel(card);
   return node;
 }
 

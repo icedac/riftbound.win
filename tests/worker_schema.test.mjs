@@ -467,6 +467,7 @@ function seedPlaygroundDuel(db, { hostRunes = 4, guestRunes = 4 } = {}) {
       deck_json: JSON.stringify({
         main: [{ id: "OGN-001", quantity: 5 }],
         runes: [{ id: "OGN-R01", quantity: hostRunes }],
+        battlefields: [{ id: "BF-001", quantity: 1 }],
       }),
       created_at: now,
       updated_at: now,
@@ -479,6 +480,7 @@ function seedPlaygroundDuel(db, { hostRunes = 4, guestRunes = 4 } = {}) {
       deck_json: JSON.stringify({
         main: [{ id: "OGN-002", quantity: 5 }],
         runes: [{ id: "OGN-R02", quantity: guestRunes }],
+        battlefields: [{ id: "BF-002", quantity: 1 }],
       }),
       created_at: now,
       updated_at: now,
@@ -940,6 +942,55 @@ test("worker records card exhaust state and readies channeled runes on new turns
   assert.equal(returned.table.seats[0].zones.rune_pool.length, 4);
   assert.equal(returned.table.seats[0].zones.rune_deck.length, 0);
   assert.equal(returned.table.seats[0].zones.rune_pool.find((card) => card.instance_id === selectedRune).exhausted, false);
+});
+
+test("worker persists battlefield claim control and source scoring", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  const started = await postPlaygroundEvent(env, table.id, "host-session", "game.start").then((response) => response.json());
+  const battlefield = started.table.seats[0].zones.battlefields[0];
+  const claim = await postPlaygroundEvent(env, table.id, "host-session", "battlefield.claim", {
+    seat_index: 0,
+    zone: "battlefields",
+    instance_id: battlefield.instance_id,
+  });
+
+  assert.equal(claim.status, 201);
+  const claimed = await claim.json();
+  assert.equal(claimed.table.seats[0].zones.battlefields[0].controller_user_id, "host-user");
+
+  const score = await postPlaygroundEvent(env, table.id, "host-session", "score.point", {
+    amount: 1,
+    source: "battlefield",
+    battlefield_instance_id: battlefield.instance_id,
+  });
+
+  assert.equal(score.status, 201);
+  const scored = await score.json();
+  assert.equal(scored.table.seats[0].points, 1);
+  assert.equal(scored.table.seats[0].zones.battlefields[0].last_scored_by, "host-user");
+  assert.equal(db.playgroundEvents.at(-2).event_type, "battlefield.claim");
+  assert.equal(db.playgroundEvents.at(-1).event_type, "score.point");
 });
 
 test("worker completes playground tables when a player concedes", async () => {
