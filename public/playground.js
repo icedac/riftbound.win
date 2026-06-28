@@ -699,7 +699,8 @@ function seatZones(seat) {
   zones.className = "zone-grid";
   for (const key of PLAYGROUND_ZONE_ORDER) {
     const zone = document.createElement("div");
-    zone.className = "zone-cell";
+    zone.className = ["zone-cell", `zone-${key}`, zoneRoleClass(key)].join(" ");
+    zone.dataset.zone = key;
     zone.append(text("strong", labelZone(key)), text("span", `${seat.zones?.[key]?.length || 0}`));
     const preview = document.createElement("div");
     preview.className = "zone-preview";
@@ -907,6 +908,12 @@ function tableIdFromPath() {
 
 function labelZone(key) {
   return key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function zoneRoleClass(key) {
+  if (["hand", "main_deck", "rune_deck"].includes(key)) return "zone-private";
+  if (["base", "battlefield", "battlefields", "chain", "legend_zone", "champion_zone", "rune_pool"].includes(key)) return "zone-tabletop";
+  return "zone-utility";
 }
 
 function labelTurnPhaseValue(value) {

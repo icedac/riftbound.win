@@ -385,6 +385,12 @@ class BoundStatement {
       const [id, userId] = this.args;
       return this.db.savedDecks.find((deck) => deck.id === id && deck.user_id === userId) || null;
     }
+    if (this.sql.includes("SELECT COUNT(*) AS count FROM playground_tables WHERE host_user_id = ? AND created_at >= ?")) {
+      const [hostUserId, cutoff] = this.args;
+      return {
+        count: this.db.playgroundTables.filter((table) => table.host_user_id === hostUserId && table.created_at >= cutoff).length,
+      };
+    }
     if (this.sql.includes("FROM playground_tables WHERE id = ?")) {
       const [id] = this.args;
       return this.db.playgroundTables.find((table) => table.id === id) || null;
@@ -498,6 +504,36 @@ async function postPlaygroundEvent(env, tableId, sessionId, type, payload = {}) 
     env
   );
 }
+
+test("worker rate-limits playground table creation per account", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  for (let index = 0; index < 5; index += 1) {
+    const create = await worker.fetch(
+      new Request("https://riftbound.kr/api/playground/tables", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+        body: JSON.stringify({ deck_id: "host-deck" }),
+      }),
+      env
+    );
+    assert.equal(create.status, 201);
+  }
+
+  const limited = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  assert.equal(limited.status, 429);
+  const body = await limited.json();
+  assert.match(body.error, /Too many playground tables/i);
+});
 
 test("worker stores small pasted media in D1 when R2 is not configured", async () => {
   const db = new InMemoryD1Database();

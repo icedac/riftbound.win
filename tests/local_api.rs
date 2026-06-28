@@ -460,6 +460,43 @@ async fn create_battlefield_test_deck(app: &axum::Router, cookie: &str, name: &s
 }
 
 #[tokio::test]
+async fn local_playground_table_creation_is_rate_limited_per_account() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Deck").await;
+    let deck_id = host_deck["id"].as_str().unwrap();
+
+    for _ in 0..5 {
+        let create = request(
+            &app,
+            Method::POST,
+            "/api/playground/tables",
+            Some(&host_cookie),
+            Some("application/json"),
+            Body::from(format!(r#"{{"deck_id":"{deck_id}"}}"#)),
+        )
+        .await;
+        assert_eq!(create.status(), StatusCode::CREATED);
+    }
+
+    let limited = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(r#"{{"deck_id":"{deck_id}"}}"#)),
+    )
+    .await;
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    let body = json(limited).await;
+    assert_eq!(
+        body["error"],
+        "Too many playground tables. Please wait before opening another table."
+    );
+}
+
+#[tokio::test]
 async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     let (app, _temp) = test_router();
     let host_cookie = login(&app, "google").await;

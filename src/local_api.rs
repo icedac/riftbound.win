@@ -18,6 +18,10 @@ const SESSION_DAYS: i64 = 30;
 const MAX_MEDIA_BYTES: usize = 25 * 1024 * 1024;
 const MAX_AVATAR_BYTES: usize = 2 * 1024 * 1024;
 const PLAYGROUND_VICTORY_SCORE: i64 = 8;
+const PLAYGROUND_TABLE_CREATE_LIMIT: i64 = 5;
+const PLAYGROUND_TABLE_CREATE_WINDOW_MS: i64 = 10 * 60 * 1000;
+const PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE: &str =
+    "Too many playground tables. Please wait before opening another table.";
 const HIDDEN_CARD_ID: &str = "__hidden__";
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
@@ -513,8 +517,13 @@ async fn create_playground_table(
     let result = with_conn(&state, |conn| {
         let deck = saved_deck_record_for_user(conn, &deck_id, &user.id)?
             .ok_or_else(|| anyhow::anyhow!("Deck not found"))?;
-        let table_id = new_id("table");
         let now = now_ms();
+        if recent_playground_table_count(conn, &user.id, now - PLAYGROUND_TABLE_CREATE_WINDOW_MS)?
+            >= PLAYGROUND_TABLE_CREATE_LIMIT
+        {
+            anyhow::bail!(PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE);
+        }
+        let table_id = new_id("table");
         let table = create_table_snapshot(&table_id, &user, &deck, now);
         conn.execute(
             "INSERT INTO local_playground_tables (id, host_user_id, status, created_at, updated_at, active_snapshot_json) VALUES (?, ?, ?, ?, ?, ?)",
@@ -530,6 +539,13 @@ async fn create_playground_table(
         )
             .into_response(),
         Err(error) if error.to_string().contains("Deck not found") => bad_request("Deck not found"),
+        Err(error)
+            if error
+                .to_string()
+                .contains(PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE) =>
+        {
+            too_many_requests(PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE)
+        }
         Err(error) => server_error(error),
     }
 }
@@ -819,6 +835,7 @@ fn init_local_api_db(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS local_media_post_idx ON local_media(post_id, created_at);
         CREATE INDEX IF NOT EXISTS local_saved_decks_user_updated_idx ON local_saved_decks(user_id, updated_at);
         CREATE INDEX IF NOT EXISTS local_playground_tables_updated_idx ON local_playground_tables(updated_at);
+        CREATE INDEX IF NOT EXISTS local_playground_tables_host_created_idx ON local_playground_tables(host_user_id, created_at);
         CREATE INDEX IF NOT EXISTS local_playground_seats_user_idx ON local_playground_seats(user_id);
         CREATE UNIQUE INDEX IF NOT EXISTS local_playground_events_table_sequence_idx ON local_playground_events(table_id, sequence);
         "#,
@@ -1075,6 +1092,15 @@ fn playground_tables(state: &LocalApiState) -> Result<Vec<Value>> {
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     })
+}
+
+fn recent_playground_table_count(conn: &Connection, user_id: &str, cutoff: i64) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM local_playground_tables WHERE host_user_id = ?1 AND created_at >= ?2",
+        params![user_id, cutoff],
+        |row| row.get(0),
+    )
+    .context("count recent playground tables")
 }
 
 fn playground_table(state: &LocalApiState, id: &str) -> Result<Option<Value>> {
@@ -2747,6 +2773,14 @@ fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
         Json(json!({ "error": "Sign in required" })),
+    )
+        .into_response()
+}
+
+fn too_many_requests(message: &str) -> Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(json!({ "error": message })),
     )
         .into_response()
 }

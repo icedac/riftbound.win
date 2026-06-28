@@ -9,6 +9,9 @@ const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const MAX_INLINE_MEDIA_BYTES = 1024 * 1024;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const PLAYGROUND_VICTORY_SCORE = 8;
+const PLAYGROUND_TABLE_CREATE_LIMIT = 5;
+const PLAYGROUND_TABLE_CREATE_WINDOW_MS = 10 * 60 * 1000;
+const PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE = "Too many playground tables. Please wait before opening another table.";
 const HIDDEN_CARD_ID = "__hidden__";
 const PLAYGROUND_SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
 const PLAYGROUND_TURN_PHASES = new Set(["ready", "score", "channel", "draw", "main", "end"]);
@@ -261,6 +264,8 @@ async function createPlaygroundTable(request, env) {
   const deck = await savedDeckForUser(env, deckId, session.user.id);
   if (!deck) return json({ error: "Deck not found" }, 400);
   const now = Date.now();
+  const recentTables = await recentPlaygroundTableCount(env, session.user.id, now);
+  if (recentTables >= PLAYGROUND_TABLE_CREATE_LIMIT) return playgroundTableCreateRateLimitResponse();
   const tableId = crypto.randomUUID();
   const table = createTableSnapshot(tableId, session.user, deck, now);
   await env.DB.prepare(
@@ -1502,6 +1507,19 @@ function publicPlaygroundMessageForUser(message, userId) {
   return { ...message, table: publicTableForUser(message.table, userId) };
 }
 
+async function recentPlaygroundTableCount(env, userId, now) {
+  const cutoff = now - PLAYGROUND_TABLE_CREATE_WINDOW_MS;
+  const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM playground_tables WHERE host_user_id = ? AND created_at >= ?")
+    .bind(userId, cutoff)
+    .first();
+  return Number(row?.count || 0);
+}
+
+function playgroundTableCreateRateLimitResponse() {
+  const headers = new Headers({ "Retry-After": String(Math.ceil(PLAYGROUND_TABLE_CREATE_WINDOW_MS / 1000)) });
+  return json({ error: PLAYGROUND_TABLE_CREATE_LIMIT_MESSAGE }, 429, headers);
+}
+
 function sendSocket(socket, message) {
   try {
     socket.send(JSON.stringify(message));
@@ -1611,6 +1629,7 @@ async function ensureSchema(env) {
     "CREATE INDEX IF NOT EXISTS saved_decks_user_updated_idx ON saved_decks(user_id, updated_at)",
     "CREATE TABLE IF NOT EXISTS playground_tables (id TEXT PRIMARY KEY, host_user_id TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, active_snapshot_json TEXT NOT NULL)",
     "CREATE INDEX IF NOT EXISTS playground_tables_updated_idx ON playground_tables(updated_at)",
+    "CREATE INDEX IF NOT EXISTS playground_tables_host_created_idx ON playground_tables(host_user_id, created_at)",
     "CREATE TABLE IF NOT EXISTS playground_seats (table_id TEXT NOT NULL, seat_index INTEGER NOT NULL, user_id TEXT NOT NULL, display_name TEXT NOT NULL, deck_id TEXT NOT NULL, deck_name TEXT NOT NULL, deck_snapshot_json TEXT NOT NULL, joined_at INTEGER NOT NULL, PRIMARY KEY (table_id, seat_index))",
     "CREATE INDEX IF NOT EXISTS playground_seats_user_idx ON playground_seats(user_id)",
     "CREATE TABLE IF NOT EXISTS playground_events (id TEXT PRIMARY KEY, table_id TEXT NOT NULL, sequence INTEGER NOT NULL, user_id TEXT NOT NULL, event_type TEXT NOT NULL, event_json TEXT NOT NULL, created_at INTEGER NOT NULL)",

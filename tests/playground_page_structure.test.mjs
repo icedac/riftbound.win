@@ -150,6 +150,8 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /function orderedSeats/);
   assert.match(js, /orderedSeats\(table\)\.map\(seatZones\)/);
   assert.match(js, /PLAYGROUND_ZONE_ORDER/);
+  assert.match(js, /zoneRoleClass\(key\)/);
+  assert.match(js, /`zone-\$\{key\}`/);
   assert.match(js, /legend_zone/);
   assert.match(js, /battlefields/);
   assert.match(js, /chain/);
@@ -164,6 +166,16 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /focusin/);
   assert.match(css, /\.card-hover-preview/);
   assert.match(css, /\.seat-board\.is-current-player/);
+  assert.match(css, /\.seat-board\.is-current-player \.zone-grid/);
+  assert.match(css, /\.seat-board\.is-opponent-player \.zone-grid/);
+  assert.match(css, /\.table-actions,[^}]*\.zone-grid\s*\{[^}]*min-width: 0;/s);
+  assert.match(css, /\.selected-card-tools\s*\{[^}]*grid-template-columns: repeat\(auto-fit, minmax\(112px, 1fr\)\)/s);
+  assert.match(css, /grid-template-columns:\s*minmax\(0, 0\.78fr\) minmax\(0, 0\.9fr\) minmax\(0, 1\.25fr\)/);
+  assert.match(css, /grid-template-areas:[^;]*"legend champion battlefields main_deck rune_deck"[^;]*"base battlefield battlefield hand hand"/s);
+  assert.match(css, /grid-template-areas:[^;]*"hand hand battlefield battlefield base"[^;]*"rune_deck main_deck battlefields champion legend"/s);
+  assert.match(css, /\.zone-hand/);
+  assert.match(css, /\.zone-main_deck/);
+  assert.match(css, /\.zone-rune_deck/);
   assert.match(css, /\.card-chip img/);
   assert.match(css, /\.card-chip\.hidden-card/);
 });

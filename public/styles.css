@@ -2337,6 +2337,19 @@ dialog::backdrop {
   gap: 8px;
 }
 
+.table-actions,
+.selected-card-tools,
+.table-zones,
+.seat-board,
+.zone-grid {
+  min-width: 0;
+}
+
+.table-actions button {
+  min-width: 0;
+  white-space: normal;
+}
+
 .turn-phase-control {
   display: inline-grid;
   min-width: 116px;
@@ -2352,7 +2365,7 @@ dialog::backdrop {
 
 .selected-card-tools {
   display: grid;
-  grid-template-columns: minmax(170px, 1fr) minmax(140px, 180px) repeat(7, max-content);
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
   align-items: end;
   padding: 10px;
@@ -2362,6 +2375,7 @@ dialog::backdrop {
 }
 
 .selected-card-tools span {
+  grid-column: 1 / -1;
   align-self: center;
   min-width: 0;
   overflow: hidden;
@@ -2373,13 +2387,16 @@ dialog::backdrop {
 }
 
 .selected-card-tools label {
+  min-width: 0;
   color: var(--muted);
   font-size: 11px;
   font-weight: 850;
 }
 
+.selected-card-tools button,
 .selected-card-tools select {
-  max-width: 180px;
+  width: 100%;
+  min-width: 0;
 }
 
 .table-zones {
@@ -2413,8 +2430,77 @@ dialog::backdrop {
 
 .zone-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 0.9fr) minmax(0, 1.25fr) minmax(0, 1.25fr) minmax(0, 0.78fr);
+  grid-auto-rows: minmax(104px, auto);
   gap: 8px;
+}
+
+.seat-board.is-current-player .zone-grid {
+  grid-template-areas:
+    "legend champion battlefields main_deck rune_deck"
+    "discard battlefield battlefield chain revealed"
+    "base battlefield battlefield hand hand"
+    "removed rune_pool rune_pool rune_pool rune_pool";
+}
+
+.seat-board.is-opponent-player .zone-grid {
+  grid-template-areas:
+    "hand hand battlefield battlefield base"
+    "revealed chain battlefield battlefield discard"
+    "rune_deck main_deck battlefields champion legend"
+    "rune_pool rune_pool rune_pool rune_pool removed";
+}
+
+.zone-legend_zone {
+  grid-area: legend;
+}
+
+.zone-champion_zone {
+  grid-area: champion;
+}
+
+.zone-battlefields {
+  grid-area: battlefields;
+}
+
+.zone-base {
+  grid-area: base;
+}
+
+.zone-main_deck {
+  grid-area: main_deck;
+}
+
+.zone-rune_deck {
+  grid-area: rune_deck;
+}
+
+.zone-rune_pool {
+  grid-area: rune_pool;
+}
+
+.zone-hand {
+  grid-area: hand;
+}
+
+.zone-chain {
+  grid-area: chain;
+}
+
+.zone-battlefield {
+  grid-area: battlefield;
+}
+
+.zone-discard {
+  grid-area: discard;
+}
+
+.zone-removed {
+  grid-area: removed;
+}
+
+.zone-revealed {
+  grid-area: revealed;
 }
 
 .zone-cell {
@@ -2426,6 +2512,19 @@ dialog::backdrop {
   border: 1px solid rgb(255 255 255 / 8%);
   border-radius: 7px;
   background: rgb(15 21 26 / 82%);
+}
+
+.zone-private {
+  background: rgb(8 13 17 / 92%);
+}
+
+.zone-tabletop {
+  border-color: rgb(45 212 191 / 18%);
+}
+
+.zone-hand,
+.zone-battlefield {
+  min-height: 148px;
 }
 
 .zone-cell strong {
@@ -2442,6 +2541,22 @@ dialog::backdrop {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+  min-width: 0;
+}
+
+.zone-hand .zone-preview,
+.zone-battlefield .zone-preview,
+.zone-rune_pool .zone-preview {
+  align-content: end;
+  align-items: end;
+  min-height: 92px;
+}
+
+.seat-board.is-current-player .zone-hand .zone-preview,
+.seat-board.is-opponent-player .zone-hand .zone-preview {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .card-chip {
@@ -2662,6 +2777,23 @@ dialog::backdrop {
 
   .zone-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
+    grid-template-areas: none;
+  }
+
+  .zone-legend_zone,
+  .zone-champion_zone,
+  .zone-battlefields,
+  .zone-base,
+  .zone-main_deck,
+  .zone-rune_deck,
+  .zone-rune_pool,
+  .zone-hand,
+  .zone-chain,
+  .zone-battlefield,
+  .zone-discard,
+  .zone-removed,
+  .zone-revealed {
+    grid-area: auto;
   }
 }
 
