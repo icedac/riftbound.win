@@ -1,6 +1,8 @@
 const SESSION_COOKIE = "rw_session";
 const OAUTH_COOKIE = "rw_oauth";
 const SESSION_DAYS = 30;
+const OAUTH_BRIDGE_MAX_AGE_SECONDS = 600;
+const NAVER_CANONICAL_ORIGIN = "https://riftbound.win";
 const BOARDS = new Set(["free", "deck", "notice"]);
 const PROVIDERS = new Set(["google", "naver"]);
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
@@ -52,6 +54,8 @@ async function handleApi(request, env, url) {
 
   const authStart = url.pathname.match(/^\/api\/auth\/(google|naver)\/start$/);
   if (authStart) return startAuth(request, env, authStart[1]);
+  const authBridge = url.pathname.match(/^\/api\/auth\/(google|naver)\/bridge$/);
+  if (authBridge) return finishAuthBridge(request, env, authBridge[1], url);
   const authCallback = url.pathname.match(/^\/api\/auth\/(google|naver)\/callback$/);
   if (authCallback) return finishAuth(request, env, authCallback[1], url);
 
@@ -432,9 +436,18 @@ async function startAuth(request, env, provider) {
   if (!(await ensureSchema(env))) return redirectWithError(request, "db-missing");
   const config = providerConfig(env, provider);
   if (!config.clientId || !config.clientSecret) return redirectWithError(request, `${provider}-missing`);
-  const state = `${provider}:${crypto.randomUUID()}`;
-  const origin = new URL(request.url).origin;
-  const callback = `${origin}/api/auth/${provider}/callback`;
+  const url = new URL(request.url);
+  const origin = url.origin;
+  const requestedReturnOrigin = allowedOAuthReturnOrigin(url.searchParams.get("return_origin") || "");
+  const authOrigin = authOriginForProvider(env, provider, origin);
+  if (provider === "naver" && authOrigin !== origin && !requestedReturnOrigin) {
+    const canonicalStart = new URL(`/api/auth/${provider}/start`, authOrigin);
+    canonicalStart.searchParams.set("return_origin", origin);
+    return new Response(null, { status: 302, headers: { Location: canonicalStart.toString() } });
+  }
+  const returnOrigin = requestedReturnOrigin && requestedReturnOrigin !== authOrigin ? requestedReturnOrigin : "";
+  const state = makeOAuthState(provider, returnOrigin);
+  const callback = `${authOrigin}/api/auth/${provider}/callback`;
   const target = new URL(config.authorizeUrl);
   for (const [key, value] of Object.entries(config.authParams(callback, state))) {
     target.searchParams.set(key, value);
@@ -457,6 +470,7 @@ async function finishAuth(request, env, provider, url) {
   if (!config.clientId || !config.clientSecret) return redirectWithError(request, `${provider}-missing`);
   const origin = new URL(request.url).origin;
   const callback = `${origin}/api/auth/${provider}/callback`;
+  const returnOrigin = oauthReturnOrigin(state);
   const oauthProfile = await fetchProviderProfile(provider, config, code, callback, state);
   if (!oauthProfile.id) return redirectWithError(request, "profile");
 
@@ -469,7 +483,28 @@ async function finishAuth(request, env, provider, url) {
   const sessionId = await createSession(env, user.id);
 
   const headers = new Headers({ Location: "/profile/" });
+  if (returnOrigin && returnOrigin !== origin) {
+    const bridgeToken = await createOAuthBridge(env, sessionId, returnOrigin);
+    headers.set("Location", `${returnOrigin}/api/auth/${provider}/bridge?token=${encodeURIComponent(bridgeToken)}`);
+  }
   headers.append("Set-Cookie", makeCookie(SESSION_COOKIE, sessionId, { maxAge: SESSION_DAYS * 86400 }));
+  headers.append("Set-Cookie", makeCookie(OAUTH_COOKIE, "", { maxAge: 0 }));
+  return new Response(null, { status: 302, headers });
+}
+
+async function finishAuthBridge(request, env, provider, url) {
+  if (!PROVIDERS.has(provider)) return json({ error: "Unknown provider" }, 400);
+  if (!(await ensureSchema(env))) return redirectWithError(request, "db-missing");
+  const token = url.searchParams.get("token") || "";
+  const row = token
+    ? await env.DB.prepare("SELECT session_id, return_origin, expires_at FROM oauth_bridges WHERE token = ?").bind(token).first()
+    : null;
+  if (!row || row.return_origin !== url.origin || row.expires_at <= Date.now()) {
+    return redirectWithError(request, "bridge");
+  }
+  await env.DB.prepare("DELETE FROM oauth_bridges WHERE token = ?").bind(token).run();
+  const headers = new Headers({ Location: "/profile/" });
+  headers.append("Set-Cookie", makeCookie(SESSION_COOKIE, row.session_id, { maxAge: SESSION_DAYS * 86400 }));
   headers.append("Set-Cookie", makeCookie(OAUTH_COOKIE, "", { maxAge: 0 }));
   return new Response(null, { status: 302, headers });
 }
@@ -572,6 +607,56 @@ function providerStatus(origin, provider, secrets) {
     callback_url: `${origin}/api/auth/${provider}/callback`,
     missing,
   };
+}
+
+function authOriginForProvider(env, provider, origin) {
+  if (provider !== "naver" || hostForOrigin(origin) !== "riftbound.kr") return origin;
+  return allowedOAuthReturnOrigin(env.NAVER_CANONICAL_ORIGIN || NAVER_CANONICAL_ORIGIN) || origin;
+}
+
+function makeOAuthState(provider, returnOrigin = "") {
+  const parts = [provider, crypto.randomUUID()];
+  if (returnOrigin) parts.push(base64UrlEncode(returnOrigin));
+  return parts.join(":");
+}
+
+function oauthReturnOrigin(state) {
+  const [, , encodedOrigin] = String(state || "").split(":");
+  if (!encodedOrigin) return "";
+  return allowedOAuthReturnOrigin(base64UrlDecode(encodedOrigin));
+}
+
+function allowedOAuthReturnOrigin(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return "";
+    if (!["riftbound.win", "riftbound.kr"].includes(url.hostname)) return "";
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+function hostForOrigin(origin) {
+  try {
+    return new URL(origin).hostname;
+  } catch {
+    return "";
+  }
+}
+
+function base64UrlEncode(value) {
+  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  try {
+    const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    return atob(padded);
+  } catch {
+    return "";
+  }
 }
 
 function mediaStatus(env) {
@@ -895,6 +980,15 @@ async function createSession(env, userId) {
   return id;
 }
 
+async function createOAuthBridge(env, sessionId, returnOrigin) {
+  const token = crypto.randomUUID();
+  const now = Date.now();
+  await env.DB.prepare("INSERT INTO oauth_bridges (token, session_id, return_origin, created_at, expires_at) VALUES (?, ?, ?, ?, ?)")
+    .bind(token, sessionId, returnOrigin, now, now + OAUTH_BRIDGE_MAX_AGE_SECONDS * 1000)
+    .run();
+  return token;
+}
+
 async function mediaRows(env, postId) {
   const rows = await env.DB.prepare("SELECT id, key, media_type, mime_type, created_at FROM media WHERE post_id = ? ORDER BY created_at")
     .bind(postId)
@@ -947,6 +1041,8 @@ async function ensureSchema(env) {
     "CREATE INDEX IF NOT EXISTS providers_user_id_idx ON providers(user_id)",
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id)",
+    "CREATE TABLE IF NOT EXISTS oauth_bridges (token TEXT PRIMARY KEY, session_id TEXT NOT NULL, return_origin TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
+    "CREATE INDEX IF NOT EXISTS oauth_bridges_expires_idx ON oauth_bridges(expires_at)",
     "CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, board TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', user_id TEXT, author_name TEXT NOT NULL DEFAULT 'Guest', votes INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL)",
     "CREATE INDEX IF NOT EXISTS posts_board_created_idx ON posts(board, created_at)",
     "CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, post_id TEXT NOT NULL, key TEXT NOT NULL, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, inline_data TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)",

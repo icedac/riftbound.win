@@ -104,6 +104,87 @@ test("worker reports configured OAuth providers when secrets are present", async
   assert.equal(body.auth.providers.naver.callback_url, "https://riftbound.kr/api/auth/naver/callback");
 });
 
+test("worker routes riftbound.kr Naver auth through the registered riftbound.win callback", async () => {
+  const db = new FakeD1Database();
+  const response = await worker.fetch(new Request("https://riftbound.kr/api/auth/naver/start"), {
+    DB: db,
+    NAVER_CLIENT_ID: "naver-id",
+    NAVER_CLIENT_SECRET: "naver-secret",
+    ASSETS: { fetch: () => new Response("asset") },
+  });
+
+  assert.equal(response.status, 302);
+  const location = new URL(response.headers.get("Location"));
+  assert.equal(location.origin, "https://riftbound.win");
+  assert.equal(location.pathname, "/api/auth/naver/start");
+  assert.equal(location.searchParams.get("return_origin"), "https://riftbound.kr");
+  assert.equal(response.headers.get("Set-Cookie"), null);
+});
+
+test("worker bridges a canonical Naver callback back to riftbound.kr with a one-time token", async () => {
+  const db = new InMemoryD1Database();
+  const env = {
+    DB: db,
+    NAVER_CLIENT_ID: "naver-id",
+    NAVER_CLIENT_SECRET: "naver-secret",
+    ASSETS: { fetch: () => new Response("asset") },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href === "https://nid.naver.com/oauth2.0/token") {
+      return Response.json({ access_token: "naver-access-token" });
+    }
+    if (href === "https://openapi.naver.com/v1/nid/me") {
+      return Response.json({
+        response: {
+          id: "naver-user-1",
+          email: "player@example.com",
+          nickname: "Naver Player",
+          profile_image: "",
+        },
+      });
+    }
+    throw new Error(`unexpected fetch ${href}`);
+  };
+
+  try {
+    const start = await worker.fetch(
+      new Request("https://riftbound.win/api/auth/naver/start?return_origin=https%3A%2F%2Friftbound.kr"),
+      env
+    );
+    assert.equal(start.status, 302);
+    const authorize = new URL(start.headers.get("Location"));
+    assert.equal(authorize.searchParams.get("redirect_uri"), "https://riftbound.win/api/auth/naver/callback");
+    const state = authorize.searchParams.get("state");
+    const oauthCookie = start.headers.get("Set-Cookie").split(";")[0];
+    assert.match(decodeURIComponent(oauthCookie), new RegExp(`^rw_oauth=${state}`));
+
+    const callback = await worker.fetch(
+      new Request(`https://riftbound.win/api/auth/naver/callback?code=naver-code&state=${encodeURIComponent(state)}`, {
+        headers: { Cookie: oauthCookie },
+      }),
+      env
+    );
+    assert.equal(callback.status, 302);
+    const bridgeLocation = new URL(callback.headers.get("Location"));
+    assert.equal(bridgeLocation.origin, "https://riftbound.kr");
+    assert.equal(bridgeLocation.pathname, "/api/auth/naver/bridge");
+    const bridgeToken = bridgeLocation.searchParams.get("token");
+    assert.ok(bridgeToken);
+    assert.equal(db.oauthBridges.length, 1);
+    assert.equal(db.oauthBridges[0].token, bridgeToken);
+
+    const bridge = await worker.fetch(new Request(bridgeLocation), env);
+    assert.equal(bridge.status, 302);
+    assert.equal(bridge.headers.get("Location"), "/profile/");
+    assert.match(bridge.headers.get("Set-Cookie"), /^rw_session=/);
+    assert.equal(db.oauthBridges.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("worker reports R2 media capability when MEDIA binding is configured", async () => {
   const db = new FakeD1Database();
   const request = new Request("https://riftbound.kr/api/me");
@@ -175,6 +256,40 @@ class BoundStatement {
     } else if (sql.startsWith("INSERT INTO media")) {
       const [id, postId, key, mediaType, mimeType, inlineData, createdAt] = this.args;
       this.db.media.push({ id, post_id: postId, key, media_type: mediaType, mime_type: mimeType, inline_data: inlineData || "", created_at: createdAt });
+    } else if (sql.startsWith("INSERT INTO users")) {
+      const [id, displayName, bio, avatarKey, avatarType, createdAt, updatedAt] = this.args;
+      this.db.users.push({
+        id,
+        display_name: displayName,
+        bio: bio || "",
+        avatar_key: avatarKey || "",
+        avatar_type: avatarType || "",
+        avatar_data: "",
+        created_at: createdAt,
+        updated_at: updatedAt,
+      });
+    } else if (sql.startsWith("INSERT OR REPLACE INTO providers")) {
+      const [provider, providerUserId, userId, email, displayName, avatarUrl, createdAt, updatedAt] = this.args;
+      this.db.providers = this.db.providers.filter((item) => item.provider !== provider || item.provider_user_id !== providerUserId);
+      this.db.providers.push({
+        provider,
+        provider_user_id: providerUserId,
+        user_id: userId,
+        email,
+        display_name: displayName,
+        avatar_url: avatarUrl,
+        created_at: createdAt,
+        updated_at: updatedAt,
+      });
+    } else if (sql.startsWith("INSERT INTO sessions")) {
+      const [id, userId, createdAt, expiresAt] = this.args;
+      this.db.sessions.push({ id, user_id: userId, created_at: createdAt, expires_at: expiresAt });
+    } else if (sql.startsWith("INSERT INTO oauth_bridges")) {
+      const [token, sessionId, returnOrigin, createdAt, expiresAt] = this.args;
+      this.db.oauthBridges.push({ token, session_id: sessionId, return_origin: returnOrigin, created_at: createdAt, expires_at: expiresAt });
+    } else if (sql.startsWith("DELETE FROM oauth_bridges")) {
+      const [token] = this.args;
+      this.db.oauthBridges = this.db.oauthBridges.filter((item) => item.token !== token);
     } else if (sql.startsWith("UPDATE users SET avatar_key")) {
       const [avatarKey, avatarType, avatarData, updatedAt, userId] = this.args;
       const user = this.db.users.find((item) => item.id === userId);
@@ -253,6 +368,19 @@ class BoundStatement {
       const session = this.db.sessions.find((item) => item.id === sessionId && item.expires_at > now);
       return session ? this.db.users.find((user) => user.id === session.user_id) || null : null;
     }
+    if (this.sql.includes("SELECT * FROM users WHERE id = ?")) {
+      const [id] = this.args;
+      return this.db.users.find((user) => user.id === id) || null;
+    }
+    if (this.sql.includes("FROM providers p")) {
+      const [provider, providerUserId] = this.args;
+      const providerRow = this.db.providers.find((item) => item.provider === provider && item.provider_user_id === providerUserId);
+      return providerRow ? this.db.users.find((user) => user.id === providerRow.user_id) || null : null;
+    }
+    if (this.sql.includes("FROM oauth_bridges")) {
+      const [token] = this.args;
+      return this.db.oauthBridges.find((item) => item.token === token) || null;
+    }
     if (this.sql.includes("FROM saved_decks WHERE id = ? AND user_id = ?")) {
       const [id, userId] = this.args;
       return this.db.savedDecks.find((deck) => deck.id === id && deck.user_id === userId) || null;
@@ -288,7 +416,9 @@ class InMemoryD1Database {
     this.posts = [];
     this.media = [];
     this.users = [];
+    this.providers = [];
     this.sessions = [];
+    this.oauthBridges = [];
     this.savedDecks = [];
     this.playgroundTables = [];
     this.playgroundSeats = [];
