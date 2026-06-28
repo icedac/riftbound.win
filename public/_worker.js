@@ -294,13 +294,14 @@ async function joinPlaygroundTable(request, env, tableId) {
   const table = safeJson(row.active_snapshot_json, {});
   if (!Array.isArray(table.seats)) table.seats = [];
   table.seats.push(createSeatSnapshot(seatCount, session.user, deck, now));
-  table.status = "active";
+  const status = row.status || table.status || "waiting";
+  table.status = status;
   table.updated_at = now;
   await insertPlaygroundSeat(env, tableId, seatCount, session.user, deck, now);
   await env.DB.prepare(
     "UPDATE playground_tables SET status = ?, updated_at = ?, active_snapshot_json = ? WHERE id = ?"
   )
-    .bind("active", now, JSON.stringify(table), tableId)
+    .bind(status, now, JSON.stringify(table), tableId)
     .run();
   await broadcastPlaygroundActorMessage(env, tableId, { type: "table.snapshot", table });
   broadcastTableMessage(tableId, { type: "table.snapshot", table });
@@ -320,6 +321,9 @@ async function appendPlaygroundEvent(request, env, tableId) {
   if (!row) return json({ error: "Table not found" }, 404);
   const seat = await playgroundSeatIndex(env, tableId, session.user.id);
   if (!seat) return json({ error: "Sign in required" }, 401);
+  const table = safeJson(row.active_snapshot_json, {});
+  const eventError = validatePlaygroundEvent(table, session.user, eventType);
+  if (eventError) return json({ error: eventError.message }, eventError.status);
   const sequence = (await nextPlaygroundSequence(env, tableId)) + 1;
   const now = Date.now();
   const event = {
@@ -331,7 +335,6 @@ async function appendPlaygroundEvent(request, env, tableId) {
     payload,
     created_at: now,
   };
-  const table = safeJson(row.active_snapshot_json, {});
   applyPlaygroundEvent(table, event);
   table.updated_at = now;
   const status = table.status || "active";
@@ -885,6 +888,27 @@ function deckEntries(deckJson = {}) {
       section: entry.section || "main",
     }))
     .filter((entry) => entry.id && entry.quantity > 0);
+}
+
+function validatePlaygroundEvent(table, user, eventType) {
+  if (eventType === "game.start") {
+    if (hostUserId(table) !== user.id) return { status: 403, message: "Only the table host can start" };
+    if ((table.seats || []).length < 2) return { status: 409, message: "Table needs two players" };
+    if (table.status === "completed") return { status: 409, message: "Table is completed" };
+    return null;
+  }
+  if (activePlaygroundEventTypes().has(eventType) && table.status !== "active") {
+    return { status: 409, message: "Game has not started" };
+  }
+  return null;
+}
+
+function hostUserId(table) {
+  return table?.seats?.[0]?.user_id || "";
+}
+
+function activePlaygroundEventTypes() {
+  return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "result.propose", "player.concede"]);
 }
 
 function applyPlaygroundEvent(table, event) {

@@ -561,12 +561,13 @@ async fn join_playground_table(
             .and_then(Value::as_array_mut)
             .ok_or_else(|| anyhow::anyhow!("Invalid table snapshot"))?
             .push(seat);
-        table["status"] = json!("active");
+        let status = row.1;
+        table["status"] = json!(status.clone());
         table["updated_at"] = json!(now);
         insert_playground_seat(conn, &id, seat_count, &user, &deck, now)?;
         conn.execute(
             "UPDATE local_playground_tables SET status = ?, updated_at = ?, active_snapshot_json = ? WHERE id = ?",
-            params!["active", now, table.to_string(), id],
+            params![status, now, table.to_string(), id],
         )?;
         Ok(table)
     });
@@ -609,6 +610,8 @@ async fn append_playground_event(
         if playground_seat_index(conn, &id, &user.id)?.is_none() {
             anyhow::bail!("Table seat required");
         }
+        let mut table = safe_json(&row.2, json!({}));
+        validate_playground_event(&table, &user, &event_type)?;
         let sequence = next_playground_sequence(conn, &id)?;
         let now = now_ms();
         let event_id = new_id("event");
@@ -621,7 +624,6 @@ async fn append_playground_event(
             "payload": event_payload,
             "created_at": now,
         });
-        let mut table = safe_json(&row.2, json!({}));
         apply_playground_event(&mut table, &event);
         table["updated_at"] = json!(now);
         let status = table["status"].as_str().unwrap_or("active").to_string();
@@ -647,6 +649,26 @@ async fn append_playground_event(
         Ok(value) => (StatusCode::CREATED, Json(value)).into_response(),
         Err(error) if error.to_string().contains("Table not found") => not_found("Table not found"),
         Err(error) if error.to_string().contains("Table seat required") => unauthorized(),
+        Err(error) if error.to_string().contains("Table host required") => (
+            StatusCode::FORBIDDEN,
+            Json(json!({ "error": "Only the table host can start" })),
+        )
+            .into_response(),
+        Err(error) if error.to_string().contains("Table needs two players") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Table needs two players" })),
+        )
+            .into_response(),
+        Err(error) if error.to_string().contains("Table is completed") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Table is completed" })),
+        )
+            .into_response(),
+        Err(error) if error.to_string().contains("Game has not started") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Game has not started" })),
+        )
+            .into_response(),
         Err(error) => server_error(error),
     }
 }
@@ -1223,6 +1245,56 @@ fn deck_entry_from_section(value: &Value, section: &str) -> Option<DeckEntry> {
     let mut entry = deck_entry_from_value(value)?;
     entry.section = section.to_string();
     Some(entry)
+}
+
+fn validate_playground_event(table: &Value, user: &SessionUser, event_type: &str) -> Result<()> {
+    if event_type == "game.start" {
+        if playground_host_user_id(table) != Some(user.id.as_str()) {
+            anyhow::bail!("Table host required");
+        }
+        if playground_seat_len(table) < 2 {
+            anyhow::bail!("Table needs two players");
+        }
+        if table.get("status").and_then(Value::as_str) == Some("completed") {
+            anyhow::bail!("Table is completed");
+        }
+        return Ok(());
+    }
+    if active_playground_event_type(event_type)
+        && table.get("status").and_then(Value::as_str) != Some("active")
+    {
+        anyhow::bail!("Game has not started");
+    }
+    Ok(())
+}
+
+fn playground_host_user_id(table: &Value) -> Option<&str> {
+    table
+        .get("seats")?
+        .as_array()?
+        .first()?
+        .get("user_id")?
+        .as_str()
+}
+
+fn playground_seat_len(table: &Value) -> usize {
+    table
+        .get("seats")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0)
+}
+
+fn active_playground_event_type(value: &str) -> bool {
+    matches!(
+        value,
+        "card.move"
+            | "card.reveal"
+            | "card.flip"
+            | "turn.pass"
+            | "result.propose"
+            | "player.concede"
+    )
 }
 
 fn apply_playground_event(table: &mut Value, event: &Value) {

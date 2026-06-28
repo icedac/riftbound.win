@@ -44,6 +44,9 @@ test("joined tables append ordered events, preserve chat and voice state, and re
   let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck(), user: host, now: 1000 });
   table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2"), user: guest, now: 1100 });
 
+  assert.equal(table.status, "waiting");
+  assert.equal(table.seats.length, 2);
+
   table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
   table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "main_deck", to: "hand", count: 2 }, now: 1300 });
   table = appendTableEvent(table, { actorId: guest.id, type: "chat.message", payload: { text: "ready" }, now: 1400 });

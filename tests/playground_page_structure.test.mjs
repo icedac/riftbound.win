@@ -67,3 +67,31 @@ test("playground client does not block profile and table boot on the card catalo
   assert.match(js, /render\(\);\s+await loadProfile/);
   assert.doesNotMatch(js, /Promise\.all\(\s*\[\s*fetchJson\("\/cards\.json"/);
 });
+
+test("playground client keeps Start host-only and locks card actions until active", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(js, /function hostUserId/);
+  assert.match(js, /function canStartTable/);
+  assert.match(js, /function isTableActive/);
+  assert.match(js, /els\.startGame\.disabled = !canStartTable\(table\)/);
+  assert.match(js, /control\.disabled = !isTableActive\(table\) \|\| controlsDisabled/);
+});
+
+test("playground renders Hearthstone-style seats with card images and hover preview", async () => {
+  const html = await readFile(playgroundHtmlPath, "utf8");
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+  const css = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
+
+  assert.match(html, /id="cardHoverPreview"/);
+  assert.match(js, /function orderedSeats/);
+  assert.match(js, /orderedSeats\(table\)\.map\(seatZones\)/);
+  assert.match(js, /function renderCardPreview/);
+  assert.match(js, /function cardImageSrc/);
+  assert.match(js, /document\.createElement\("img"\)/);
+  assert.match(js, /mouseover/);
+  assert.match(js, /focusin/);
+  assert.match(css, /\.card-hover-preview/);
+  assert.match(css, /\.seat-board\.is-current-player/);
+  assert.match(css, /\.card-chip img/);
+});

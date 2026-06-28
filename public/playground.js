@@ -19,6 +19,7 @@ const state = {
   tables: [],
   selectedTableId: "",
   selectedCard: null,
+  hoveredCard: null,
   micStream: null,
   pollTimer: 0,
   realtimeSocket: null,
@@ -55,6 +56,7 @@ const els = {
   moveToZone: document.querySelector("#moveToZone"),
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
   flipSelectedCard: document.querySelector("#flipSelectedCard"),
+  cardPreview: document.querySelector("#cardHoverPreview"),
   passTurn: document.querySelector("#passTurn"),
 };
 
@@ -85,13 +87,30 @@ function bindEvents() {
   els.tableZones.addEventListener("click", (event) => {
     const button = event.target.closest("[data-card-instance-id]");
     if (!button) return;
-    state.selectedCard = {
-      seatIndex: Number(button.dataset.seatIndex || 0),
-      zone: button.dataset.zone || "",
-      instanceId: button.dataset.cardInstanceId || "",
-      cardId: button.dataset.cardId || "",
-    };
+    state.selectedCard = cardRefFromNode(button);
+    state.hoveredCard = state.selectedCard;
     render();
+  });
+  els.tableZones.addEventListener("mouseover", (event) => {
+    const button = event.target.closest("[data-card-instance-id]");
+    if (!button) return;
+    state.hoveredCard = cardRefFromNode(button);
+    renderCardPreview();
+  });
+  els.tableZones.addEventListener("mouseout", (event) => {
+    if (!event.target.closest("[data-card-instance-id]")) return;
+    state.hoveredCard = null;
+    renderCardPreview();
+  });
+  els.tableZones.addEventListener("focusin", (event) => {
+    const button = event.target.closest("[data-card-instance-id]");
+    if (!button) return;
+    state.hoveredCard = cardRefFromNode(button);
+    renderCardPreview();
+  });
+  els.tableZones.addEventListener("focusout", () => {
+    state.hoveredCard = null;
+    renderCardPreview();
   });
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
   els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 4 }));
@@ -454,11 +473,13 @@ function tableButton(table) {
 function renderTable() {
   const table = currentTable();
   const controlsDisabled = !table || !state.me || !currentSeat();
-  for (const control of [els.startGame, els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.passTurn, els.toggleVoice, els.submitResult]) {
-    control.disabled = controlsDisabled;
+  els.startGame.disabled = !canStartTable(table);
+  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.passTurn, els.submitResult]) {
+    control.disabled = !isTableActive(table) || controlsDisabled;
   }
+  els.toggleVoice.disabled = controlsDisabled;
   for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard]) {
-    control.disabled = controlsDisabled || !selectedCardRecord();
+    control.disabled = !isTableActive(table) || controlsDisabled || !selectedCardRecord();
   }
   if (!table) {
     state.selectedCard = null;
@@ -467,12 +488,14 @@ function renderTable() {
     els.eventLog.replaceChildren();
     els.chatLog.replaceChildren();
     renderSelectedCard();
+    renderCardPreview();
     els.voiceStatus.textContent = "Mic idle";
     return;
   }
   els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)}`;
-  els.tableZones.replaceChildren(...(table.seats || []).map(seatZones));
+  els.tableZones.replaceChildren(...orderedSeats(table).map(seatZones));
   renderSelectedCard();
+  renderCardPreview();
   els.eventLog.replaceChildren(...(table.events || []).slice().reverse().map(eventNode));
   els.chatLog.replaceChildren(...(table.chat || []).map((chat) => text("p", `${playerName(table, chat.user_id)}: ${chat.text}`)));
   const voice = table.voice?.[currentUserId()];
@@ -482,7 +505,8 @@ function renderTable() {
 
 function seatZones(seat) {
   const root = document.createElement("article");
-  root.className = "seat-board";
+  root.className = ["seat-board", seat.user_id === currentUserId() ? "is-current-player" : "is-opponent-player"].join(" ");
+  root.dataset.seatIndex = seat.seat_index;
   root.append(text("h3", `${seat.display_name} · ${seat.deck_name}`));
   const zones = document.createElement("div");
   zones.className = "zone-grid";
@@ -518,6 +542,30 @@ function currentTable() {
 
 function currentSeat() {
   return currentTable()?.seats?.find((seat) => seat.user_id === currentUserId()) || null;
+}
+
+function orderedSeats(table) {
+  const seats = [...(table?.seats || [])];
+  return seats.sort((a, b) => Number(a.user_id === currentUserId()) - Number(b.user_id === currentUserId()));
+}
+
+function hostUserId(table) {
+  return table?.seats?.[0]?.user_id || "";
+}
+
+function canStartTable(table) {
+  return Boolean(
+    table &&
+      state.me &&
+      currentSeat() &&
+      currentUserId() === hostUserId(table) &&
+      (table.seats || []).length >= 2 &&
+      table.status === "waiting"
+  );
+}
+
+function isTableActive(table) {
+  return table?.status === "active";
 }
 
 function selectedDeck() {
@@ -589,8 +637,7 @@ function labelZone(key) {
   return key.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function selectedCardRecord() {
-  const selected = state.selectedCard;
+function selectedCardRecord(selected = state.selectedCard) {
   const table = currentTable();
   if (!selected || !table) return null;
   const seat = table.seats?.[selected.seatIndex];
@@ -610,6 +657,35 @@ function renderSelectedCard() {
   els.selectedCardStatus.textContent = `${playerName(currentTable(), selected.seat.user_id)} · ${labelZone(selected.zone)} · ${cardLabel(selected.card)}`;
 }
 
+function renderCardPreview() {
+  if (!els.cardPreview) return;
+  const selected = selectedCardRecord(state.hoveredCard) || selectedCardRecord();
+  if (!selected) {
+    els.cardPreview.replaceChildren(empty("Hover a card to read it."));
+    return;
+  }
+  const catalog = catalogCard(selected.card);
+  const preview = [];
+  const imageSrc = cardImageSrc(selected.card);
+  if (imageSrc) {
+    const image = document.createElement("img");
+    image.loading = "eager";
+    image.decoding = "async";
+    image.src = imageSrc;
+    image.alt = cardLabel(selected.card);
+    preview.push(image);
+  }
+  const title = text("strong", cardLabel(selected.card));
+  const meta = text(
+    "span",
+    [catalog?.card_type, catalog?.supertype, catalog?.cost ? `${catalog.cost} cost` : "", catalog?.might ? `${catalog.might} might` : ""]
+      .filter(Boolean)
+      .join(" · ") || selected.card.id
+  );
+  const body = text("p", catalog?.effect_text || catalog?.flavor || selected.card.id || "");
+  els.cardPreview.replaceChildren(...preview, title, meta, body);
+}
+
 function cardChip(card, seat, zone) {
   const node = document.createElement("button");
   node.type = "button";
@@ -625,15 +701,47 @@ function cardChip(card, seat, zone) {
   node.dataset.zone = zone;
   node.dataset.cardInstanceId = card.instance_id;
   node.dataset.cardId = card.id;
-  node.textContent = cardLabel(card);
+  const src = cardImageSrc(card);
+  if (src) {
+    const image = document.createElement("img");
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.src = src;
+    image.alt = cardLabel(card);
+    node.append(image, text("span", cardLabel(card)));
+  } else {
+    node.textContent = cardLabel(card);
+  }
   node.title = cardLabel(card);
   return node;
 }
 
+function cardRefFromNode(node) {
+  return {
+    seatIndex: Number(node.dataset.seatIndex || 0),
+    zone: node.dataset.zone || "",
+    instanceId: node.dataset.cardInstanceId || "",
+    cardId: node.dataset.cardId || "",
+  };
+}
+
 function cardLabel(card) {
   if (card?.face_up === false) return "Face down";
-  const catalog = state.cards.find((item) => item.id === card?.id);
+  const catalog = catalogCard(card);
   return catalog?.name || card?.id || "Card";
+}
+
+function cardImageSrc(card) {
+  if (card?.face_up === false) {
+    const catalog = catalogCard(card);
+    return catalog?.local_image_back || catalog?.image_back_url || "";
+  }
+  const catalog = catalogCard(card);
+  return catalog?.local_image || catalog?.image_url || "";
+}
+
+function catalogCard(card) {
+  return state.cards.find((item) => item.id === card?.id || String(item.id).toUpperCase() === String(card?.id || "").toUpperCase());
 }
 
 function option(value, label) {

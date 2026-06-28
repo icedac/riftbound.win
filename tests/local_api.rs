@@ -501,8 +501,19 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     .await;
     assert_eq!(join.status(), StatusCode::OK);
     let joined = json(join).await;
-    assert_eq!(joined["table"]["status"], "active");
+    assert_eq!(joined["table"]["status"], "waiting");
     assert_eq!(joined["table"]["seats"].as_array().unwrap().len(), 2);
+
+    let guest_start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(guest_start.status(), StatusCode::FORBIDDEN);
 
     let start = request(
         &app,
@@ -516,6 +527,7 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     assert_eq!(start.status(), StatusCode::CREATED);
     let started = json(start).await;
     assert_eq!(started["event"]["sequence"], 1);
+    assert_eq!(started["table"]["status"], "active");
 
     let move_card = request(
         &app,

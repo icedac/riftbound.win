@@ -24,7 +24,7 @@ export function joinPlaygroundTable({ table, savedDeck, user, now = DEFAULT_NOW(
   const next = clone(table);
   if ((next.seats || []).length >= 2) return next;
   next.seats.push(createSeat({ seatIndex: next.seats.length, savedDeck, user, now, cards }));
-  next.status = "active";
+  next.status ||= "waiting";
   next.updated_at = now;
   if (!next.turn_player_id) next.turn_player_id = next.seats[0]?.user_id || "";
   return next;
