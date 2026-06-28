@@ -34,3 +34,15 @@ test("cards page cache-busts its application script", async () => {
   assert.match(html, /src="\/app\.js\?v=[^"]+"/);
   assert.doesNotMatch(html, /src="\/app\.js"/);
 });
+
+test("public page scripts are cache-busted", async () => {
+  for (const path of pages) {
+    const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+    const scripts = [...html.matchAll(/<script\s+src="([^"]+)"\s+type="module"><\/script>/g)].map((match) => match[1]);
+
+    assert.notEqual(scripts.length, 0, `${path} should load module scripts`);
+    for (const src of scripts) {
+      assert.match(src, /\?v=[^"]+$/, `${path} ${src}`);
+    }
+  }
+});
