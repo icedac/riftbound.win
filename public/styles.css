@@ -2436,6 +2436,16 @@ dialog::backdrop {
   font-weight: 850;
 }
 
+.remote-audio {
+  display: grid;
+  min-height: 34px;
+}
+
+.remote-audio audio {
+  width: 100%;
+  min-height: 34px;
+}
+
 .ghost-button {
   background: transparent;
 }

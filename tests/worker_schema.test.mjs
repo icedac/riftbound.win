@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 
 import worker from "../public/_worker.js";
 
@@ -140,6 +141,18 @@ test("worker serves playground table deep links from the static playground entry
   assert.equal(response.status, 200);
   assert.equal(new URL(assetUrl).pathname, "/playground/");
   assert.match(await response.text(), /Riftbound\.kr Playground/);
+});
+
+test("worker exposes a playground websocket relay endpoint for table events and voice signaling", async () => {
+  const source = await readFile(new URL("../public/_worker.js", import.meta.url), "utf8");
+
+  assert.match(source, /websocketRoute = url\.pathname\.match/);
+  assert.match(source, /handlePlaygroundWebSocket/);
+  assert.match(source, /WebSocketPair/);
+  assert.match(source, /signal\.offer/);
+  assert.match(source, /signal\.answer/);
+  assert.match(source, /signal\.ice/);
+  assert.match(source, /broadcastTableMessage/);
 });
 
 class BoundStatement {

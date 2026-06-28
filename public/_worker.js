@@ -6,6 +6,8 @@ const PROVIDERS = new Set(["google", "naver"]);
 const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
 const MAX_INLINE_MEDIA_BYTES = 1024 * 1024;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+const PLAYGROUND_SIGNAL_TYPES = new Set(["signal.offer", "signal.answer", "signal.ice"]);
+const playgroundSockets = new Map();
 
 export default {
   async fetch(request, env, ctx) {
@@ -33,6 +35,8 @@ async function handleApi(request, env, url) {
   if (url.pathname === "/api/saved-decks" && request.method === "POST") return createSavedDeck(request, env);
   if (url.pathname === "/api/playground/tables" && request.method === "GET") return listPlaygroundTables(env);
   if (url.pathname === "/api/playground/tables" && request.method === "POST") return createPlaygroundTable(request, env);
+  const websocketRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/ws$/);
+  if (websocketRoute) return handlePlaygroundWebSocket(request, env, decodeURIComponent(websocketRoute[1]));
   const tableRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)$/);
   if (tableRoute && request.method === "GET") return getPlaygroundTable(env, decodeURIComponent(tableRoute[1]));
   const joinRoute = url.pathname.match(/^\/api\/playground\/tables\/([^/]+)\/join$/);
@@ -335,6 +339,7 @@ async function appendPlaygroundEvent(request, env, tableId) {
   )
     .bind(now, JSON.stringify(table), status, tableId)
     .run();
+  broadcastTableMessage(tableId, { type: "table.event", table, event });
   return json({ table, event }, 201);
 }
 
@@ -357,6 +362,69 @@ async function listPlaygroundEvents(env, tableId, url) {
       created_at: row.created_at,
     })),
   });
+}
+
+async function handlePlaygroundWebSocket(request, env, tableId) {
+  if (request.headers.get("Upgrade") !== "websocket") {
+    return json({ error: "WebSocket upgrade required" }, 426);
+  }
+  if (typeof WebSocketPair === "undefined") {
+    return json({ error: "WebSocket runtime is unavailable" }, 501);
+  }
+  if (!(await ensureSchema(env))) return json({ error: "Database binding DB is not configured" }, 503);
+  const session = await currentSession(request, env);
+  if (!session) return json({ error: "Sign in required" }, 401);
+  const seat = await playgroundSeatIndex(env, tableId, session.user.id);
+  if (!seat) return json({ error: "Table seat required" }, 403);
+  const row = await playgroundTableRow(env, tableId);
+  if (!row) return json({ error: "Table not found" }, 404);
+
+  const pair = new WebSocketPair();
+  const [client, server] = Object.values(pair);
+  server.accept();
+  registerPlaygroundSocket(tableId, session.user.id, server);
+  sendSocket(server, {
+    type: "table.snapshot",
+    table: safeJson(row.active_snapshot_json, {}),
+    user_id: session.user.id,
+  });
+  broadcastTableMessage(
+    tableId,
+    {
+      type: "presence.update",
+      user_id: session.user.id,
+      online: true,
+      created_at: Date.now(),
+    },
+    session.user.id
+  );
+
+  server.addEventListener("message", (event) => {
+    const message = safeJson(event.data, {});
+    if (message.type === "ping") {
+      sendSocket(server, { type: "pong", created_at: Date.now() });
+      return;
+    }
+    if (!isRealtimeSignal(message)) {
+      sendSocket(server, { type: "table.error", error: "Unsupported realtime message" });
+      return;
+    }
+    broadcastTableMessage(
+      tableId,
+      {
+        type: message.type,
+        actor_id: session.user.id,
+        target_user_id: cleanText(message.target_user_id, 120),
+        payload: message.payload,
+        created_at: Date.now(),
+      },
+      session.user.id
+    );
+  });
+  server.addEventListener("close", () => unregisterPlaygroundSocket(tableId, session.user.id, server));
+  server.addEventListener("error", () => unregisterPlaygroundSocket(tableId, session.user.id, server));
+
+  return new Response(null, { status: 101, webSocket: client });
 }
 
 async function startAuth(request, env, provider) {
@@ -761,6 +829,49 @@ function nextSeatUserId(table, actorId) {
 
 function validPlaygroundEventType(type) {
   return new Set(["game.start", "card.move", "card.reveal", "turn.pass", "chat.message", "voice.presence", "result.propose", "player.concede"]).has(type);
+}
+
+function registerPlaygroundSocket(tableId, userId, socket) {
+  const key = String(tableId);
+  if (!playgroundSockets.has(key)) playgroundSockets.set(key, new Set());
+  playgroundSockets.get(key).add({ userId, socket });
+}
+
+function unregisterPlaygroundSocket(tableId, userId, socket) {
+  const key = String(tableId);
+  const sockets = playgroundSockets.get(key);
+  if (!sockets) return;
+  for (const entry of sockets) {
+    if (entry.userId === userId && entry.socket === socket) sockets.delete(entry);
+  }
+  if (!sockets.size) playgroundSockets.delete(key);
+}
+
+function broadcastTableMessage(tableId, message, exceptUserId = "") {
+  const sockets = playgroundSockets.get(String(tableId));
+  if (!sockets) return;
+  for (const entry of [...sockets]) {
+    if (exceptUserId && entry.userId === exceptUserId) continue;
+    if (message.target_user_id && message.target_user_id !== entry.userId) continue;
+    sendSocket(entry.socket, message);
+  }
+}
+
+function sendSocket(socket, message) {
+  try {
+    socket.send(JSON.stringify(message));
+  } catch {
+    // Stale sockets are removed by close/error listeners when the runtime reports them.
+  }
+}
+
+function isRealtimeSignal(message) {
+  return (
+    PLAYGROUND_SIGNAL_TYPES.has(message.type) &&
+    Boolean(message.payload) &&
+    typeof message.payload === "object" &&
+    !Array.isArray(message.payload)
+  );
 }
 
 function containsForbiddenSnapshotKeys(payload) {

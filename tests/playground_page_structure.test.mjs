@@ -30,6 +30,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="eventLog"',
     'id="chatLog"',
     'id="voicePanel"',
+    'id="remoteAudio"',
     'id="resultPanel"',
     'id="replayPanel"',
     'src="/playground.js?v=',
@@ -45,6 +46,8 @@ test("playground client uses shared server table APIs instead of browser-local t
 
   assert.match(js, /\/api\/playground\/tables/);
   assert.match(js, /\/events/);
+  assert.match(js, /WebSocket/);
+  assert.match(js, /RTCPeerConnection/);
   assert.doesNotMatch(js, /localStorage/);
   assert.doesNotMatch(js, /riftbound\.playground\.tables\.v1/);
 });

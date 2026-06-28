@@ -1,4 +1,13 @@
 import { replayTableEvents } from "/playground-state.js?v=20260628-playground2";
+import {
+  canUseRealtimeTransport,
+  createSignalEnvelope,
+  isSignalEnvelope,
+  realtimeUrlForTable,
+  remotePeerId,
+  shouldInitiateVoiceOffer,
+  shouldUseRealtime,
+} from "/playground-realtime.js?v=20260628-playground3";
 
 const TABLES_API = "/api/playground/tables";
 const POLL_MS = 2500;
@@ -11,6 +20,10 @@ const state = {
   selectedTableId: "",
   micStream: null,
   pollTimer: 0,
+  realtimeSocket: null,
+  realtimeTableId: "",
+  peerConnection: null,
+  makingVoiceOffer: false,
 };
 
 const els = {
@@ -26,6 +39,7 @@ const els = {
   chatForm: document.querySelector("#chatForm"),
   chatInput: document.querySelector("#chatInput"),
   voiceStatus: document.querySelector("#voiceStatus"),
+  remoteAudio: document.querySelector("#remoteAudio"),
   toggleVoice: document.querySelector("#toggleVoice"),
   resultSelect: document.querySelector("#resultSelect"),
   submitResult: document.querySelector("#submitResult"),
@@ -48,6 +62,7 @@ async function boot() {
   if (pathTableId) state.selectedTableId = pathTableId;
   await Promise.all([loadSavedDecks(), loadTables()]);
   render();
+  syncRealtime();
   state.pollTimer = window.setInterval(loadTablesQuietly, POLL_MS);
 }
 
@@ -59,6 +74,7 @@ function bindEvents() {
     if (!button) return;
     state.selectedTableId = button.dataset.tableId;
     render();
+    syncRealtime();
   });
   els.startGame.addEventListener("click", () => appendAction("game.start", { first_player_id: currentTable()?.seats?.[0]?.user_id || currentUserId() }));
   els.drawOpening.addEventListener("click", () => appendAction("card.move", { seat_index: currentSeatIndex(), from: "main_deck", to: "hand", count: 4 }));
@@ -94,6 +110,7 @@ async function loadTablesQuietly() {
   try {
     await loadTables();
     render();
+    syncRealtime();
   } catch (error) {
     console.error(error);
   }
@@ -148,15 +165,156 @@ async function toggleVoice() {
     state.micStream.getTracks().forEach((track) => track.stop());
     state.micStream = null;
     await appendAction("voice.presence", { muted: true, talking: false });
+    closePeerConnection();
     return;
   }
   try {
     state.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     await appendAction("voice.presence", { muted: false, talking: true });
+    await ensurePeerConnection();
+    if (shouldInitiateVoiceOffer(currentTable(), currentUserId())) await makeVoiceOffer();
   } catch (error) {
     console.error(error);
     els.voiceStatus.textContent = "Mic permission unavailable";
   }
+}
+
+function syncRealtime() {
+  const table = currentTable();
+  if (!shouldUseRealtime(table) || !canUseRealtimeTransport(location) || typeof WebSocket === "undefined") {
+    closeRealtime();
+    return;
+  }
+  if (state.realtimeSocket && state.realtimeTableId === table.id && state.realtimeSocket.readyState <= WebSocket.OPEN) return;
+  closeRealtime();
+  const socket = new WebSocket(realtimeUrlForTable(table.id));
+  state.realtimeSocket = socket;
+  state.realtimeTableId = table.id;
+  socket.addEventListener("open", () => sendRealtimeMessage({ type: "ping" }));
+  socket.addEventListener("message", handleRealtimeMessage);
+  socket.addEventListener("close", () => {
+    if (state.realtimeSocket === socket) {
+      state.realtimeSocket = null;
+      state.realtimeTableId = "";
+    }
+  });
+  socket.addEventListener("error", () => {
+    if (state.realtimeSocket === socket) {
+      state.realtimeSocket = null;
+      state.realtimeTableId = "";
+    }
+  });
+}
+
+function closeRealtime() {
+  if (!state.realtimeSocket) return;
+  state.realtimeSocket.close();
+  state.realtimeSocket = null;
+  state.realtimeTableId = "";
+}
+
+function handleRealtimeMessage(event) {
+  let message = {};
+  try {
+    message = JSON.parse(event.data);
+  } catch {
+    return;
+  }
+  if ((message.type === "table.snapshot" || message.type === "table.event") && message.table) {
+    mergeTable(message.table);
+    return;
+  }
+  if (isSignalEnvelope(message) || isSignalEnvelope({ type: message.type, payload: message.payload })) {
+    handleVoiceSignal(message);
+  }
+}
+
+function sendRealtimeMessage(message) {
+  if (!state.realtimeSocket || state.realtimeSocket.readyState !== WebSocket.OPEN) return false;
+  state.realtimeSocket.send(JSON.stringify(message));
+  return true;
+}
+
+async function ensurePeerConnection() {
+  if (state.peerConnection) return state.peerConnection;
+  if (typeof RTCPeerConnection === "undefined") {
+    throw new Error("Voice connection is unavailable in this browser");
+  }
+  const peer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  state.peerConnection = peer;
+  if (state.micStream) {
+    for (const track of state.micStream.getTracks()) peer.addTrack(track, state.micStream);
+  }
+  peer.addEventListener("icecandidate", (event) => {
+    if (!event.candidate) return;
+    sendRealtimeMessage(
+      createSignalEnvelope("signal.ice", event.candidate.toJSON ? event.candidate.toJSON() : event.candidate, remotePeerId(currentTable(), currentUserId()))
+    );
+  });
+  peer.addEventListener("track", (event) => attachRemoteAudio(event.streams[0]));
+  peer.addEventListener("connectionstatechange", () => {
+    if (["failed", "closed", "disconnected"].includes(peer.connectionState)) closePeerConnection();
+  });
+  return peer;
+}
+
+async function makeVoiceOffer() {
+  const targetUserId = remotePeerId(currentTable(), currentUserId());
+  if (!targetUserId || state.makingVoiceOffer) return;
+  state.makingVoiceOffer = true;
+  try {
+    const peer = await ensurePeerConnection();
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    sendRealtimeMessage(createSignalEnvelope("signal.offer", peer.localDescription, targetUserId));
+  } finally {
+    state.makingVoiceOffer = false;
+  }
+}
+
+async function handleVoiceSignal(message) {
+  if (message.actor_id === currentUserId()) return;
+  if (message.target_user_id && message.target_user_id !== currentUserId()) return;
+  if (!state.micStream && message.type === "signal.offer") {
+    els.voiceStatus.textContent = "Voice invite received";
+    return;
+  }
+  try {
+    const peer = await ensurePeerConnection();
+    if (message.type === "signal.offer") {
+      await peer.setRemoteDescription(message.payload);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      sendRealtimeMessage(createSignalEnvelope("signal.answer", peer.localDescription, message.actor_id));
+    } else if (message.type === "signal.answer") {
+      await peer.setRemoteDescription(message.payload);
+    } else if (message.type === "signal.ice") {
+      await peer.addIceCandidate(message.payload);
+    }
+  } catch (error) {
+    console.error(error);
+    els.voiceStatus.textContent = "Voice connection failed";
+  }
+}
+
+function attachRemoteAudio(stream) {
+  if (!stream || !els.remoteAudio) return;
+  let audio = els.remoteAudio.querySelector("audio");
+  if (!audio) {
+    audio = document.createElement("audio");
+    audio.autoplay = true;
+    audio.controls = true;
+    els.remoteAudio.replaceChildren(audio);
+  }
+  audio.srcObject = stream;
+}
+
+function closePeerConnection() {
+  if (state.peerConnection) {
+    state.peerConnection.close();
+    state.peerConnection = null;
+  }
+  if (els.remoteAudio) els.remoteAudio.replaceChildren();
 }
 
 function mergeTable(table) {
@@ -169,6 +327,7 @@ function mergeTable(table) {
   }
   state.selectedTableId = table.id;
   render();
+  syncRealtime();
 }
 
 function render() {
@@ -379,6 +538,8 @@ function empty(value) {
 
 window.addEventListener("beforeunload", () => {
   if (state.pollTimer) window.clearInterval(state.pollTimer);
+  closeRealtime();
+  closePeerConnection();
   if (state.micStream) state.micStream.getTracks().forEach((track) => track.stop());
 });
 
