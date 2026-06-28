@@ -1,6 +1,6 @@
 const BRAND_BY_DOMAIN = [
   { suffix: "riftbound.kr", label: "Riftbound.kr" },
-  { suffix: "riftbound.win", label: "Riftbound.win" },
+  { suffix: "riftbound.win", label: "Riftbound.kr" },
 ];
 
 export function brandForHostname(hostname = "") {
