@@ -1,4 +1,5 @@
 import { appendFoilLayers, bindFoilSurface } from "/foil.js";
+import { filterCards, normalizeSearch, resolveInitialCardFilters } from "/card-filter-state.js";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js";
 
 const state = {
@@ -53,7 +54,7 @@ async function boot() {
   buildFilters();
   bindEvents();
   readInitialSearch();
-  applyFilters();
+  applyInitialFilters();
 }
 
 function buildFilters() {
@@ -66,7 +67,7 @@ function buildFilters() {
 
 function bindEvents() {
   els.search.addEventListener("input", () => {
-    state.search = els.search.value.trim().toLowerCase();
+    state.search = normalizeSearch(els.search.value);
     state.visibleCount = PAGE_SIZE;
     applyFilters();
   });
@@ -100,18 +101,16 @@ function bindEvents() {
 }
 
 function applyFilters() {
-  state.filtered = state.cards.filter((card) => {
-    if (state.hideBanned && card.banned) return false;
-    if (state.backOnly && !card.local_image_back) return false;
-    if (state.color && !(card.colors ?? []).includes(state.color)) return false;
-    if (state.type && card.card_type !== state.type) return false;
-    if (state.set && card.set_name !== state.set) return false;
-    if (state.rarity && card.rarity !== state.rarity) return false;
-    if (state.cost && (card.cost ?? "No cost") !== state.cost) return false;
-    if (state.tag && !(card.tags ?? []).includes(state.tag)) return false;
-    if (state.search && !searchText(card).includes(state.search)) return false;
-    return true;
-  });
+  state.filtered = filterCards(state.cards, state);
+  render();
+}
+
+function applyInitialFilters() {
+  const result = resolveInitialCardFilters(state.cards, state);
+  Object.assign(state, result.filters);
+  syncFilterControls();
+  if (result.clearedInitialSearch) clearQueryParam("q");
+  state.filtered = result.filtered;
   render();
 }
 
@@ -358,18 +357,31 @@ function resetFilters() {
   state.backOnly = false;
   state.hideBanned = true;
   state.visibleCount = PAGE_SIZE;
-  els.search.value = "";
-  for (const [key] of selects) els[key].value = "";
-  els.backOnly.checked = false;
-  els.hideBanned.checked = true;
+  syncFilterControls();
+  clearQueryParam("q");
   applyFilters();
+}
+
+function syncFilterControls() {
+  els.search.value = state.search;
+  for (const [key] of selects) els[key].value = state[key] || "";
+  els.backOnly.checked = state.backOnly;
+  els.hideBanned.checked = state.hideBanned;
+}
+
+function clearQueryParam(key) {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(key)) return;
+  url.searchParams.delete(key);
+  const next = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState({}, "", next);
 }
 
 function readInitialSearch() {
   const params = new URLSearchParams(window.location.search);
   const query = params.get("q");
   if (!query) return;
-  state.search = query.trim().toLowerCase();
+  state.search = normalizeSearch(query);
   els.search.value = query.trim();
   state.visibleCount = PAGE_SIZE;
 }
@@ -380,23 +392,6 @@ function uniqueValues(values) {
     if (Number.isFinite(numeric) && numeric !== 0) return numeric;
     return String(a).localeCompare(String(b));
   });
-}
-
-function searchText(card) {
-  return [
-    card.id,
-    card.name,
-    card.effect_text,
-    card.flavor,
-    card.card_type,
-    card.set_name,
-    card.rarity,
-    ...(card.colors ?? []),
-    ...(card.tags ?? []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 }
 
 function option(value, label) {

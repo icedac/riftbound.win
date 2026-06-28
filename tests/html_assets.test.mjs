@@ -18,3 +18,12 @@ test("HTML pages load cache-busted stylesheet URLs", async () => {
     assert.doesNotMatch(html, /href="\/styles\.css"/, path);
   }
 });
+
+test("public pages use Riftbound.kr as the site title and brand", async () => {
+  for (const path of pages) {
+    const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");
+
+    assert.match(html, /Riftbound\.kr/, path);
+    assert.doesNotMatch(html, /Riftbound\.win/, path);
+  }
+});

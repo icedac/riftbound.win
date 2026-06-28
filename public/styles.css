@@ -264,20 +264,31 @@ textarea::placeholder {
 .hero-stage {
   position: relative;
   z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(260px, min(38vw, 420px)) minmax(210px, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: clamp(14px, 2vw, 22px);
+  align-items: center;
   min-height: clamp(500px, 66vh, 780px);
   perspective: 1100px;
 }
 
 .hero-cards {
-  position: absolute;
-  inset: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(110px, 190px));
+  gap: clamp(10px, 1.6vw, 18px);
+  align-content: center;
+  justify-content: start;
+  min-width: 0;
 }
 
+.hero-featured-card,
 .hero-card {
   --card-opacity: 0.56;
-  position: absolute;
+  position: relative;
   display: block;
-  width: clamp(168px, 18vw, 292px);
+  width: 100%;
+  max-width: 190px;
   aspect-ratio: 744 / 1039;
   overflow: hidden;
   isolation: isolate;
@@ -291,7 +302,19 @@ textarea::placeholder {
   animation-delay: var(--hero-delay, 0s);
 }
 
+.hero-featured-card {
+  grid-row: span 2;
+  justify-self: end;
+  max-width: min(38vw, 420px);
+  --foil-base-transform: rotate(-2deg);
+  box-shadow:
+    0 48px 118px rgb(0 0 0 / 62%),
+    0 0 78px rgb(45 212 191 / 18%),
+    0 0 92px rgb(245 158 11 / 18%);
+}
+
 .hero-card img,
+.hero-featured-card img,
 .deck-thumb img,
 .image-wrap img,
 .detail-image-shell img {
@@ -299,6 +322,7 @@ textarea::placeholder {
   z-index: 1;
 }
 
+.hero-featured-card img,
 .hero-card img {
   display: block;
   width: 100%;
@@ -306,6 +330,7 @@ textarea::placeholder {
   object-fit: cover;
 }
 
+.hero-featured-caption,
 .hero-card span {
   position: absolute;
   right: 10px;
@@ -319,53 +344,59 @@ textarea::placeholder {
   font-weight: 900;
 }
 
+.hero-featured-caption {
+  left: 14px;
+  right: 14px;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  background: rgb(5 8 10 / 78%);
+}
+
+.hero-featured-caption strong {
+  color: #fff;
+  font-size: 15px;
+}
+
+.hero-featured-caption small {
+  color: #fde68a;
+  font-size: 11px;
+  font-weight: 850;
+}
+
 .hero-card-1 {
-  left: 47%;
-  top: 42%;
   z-index: 6;
-  width: clamp(260px, 30vw, 470px);
-  --foil-base-transform: translate(-50%, -50%) rotate(-2deg);
+  --foil-base-transform: rotate(6deg);
   box-shadow:
-    0 40px 100px rgb(0 0 0 / 58%),
-    0 0 64px rgb(45 212 191 / 18%),
-    0 0 72px rgb(245 158 11 / 16%);
+    0 28px 76px rgb(0 0 0 / 50%),
+    0 0 42px rgb(45 212 191 / 12%),
+    0 0 52px rgb(245 158 11 / 12%);
 }
 
 .hero-card-2 {
-  left: 74%;
-  top: 36%;
   z-index: 4;
-  --foil-base-transform: translate(-50%, -50%) rotate(11deg);
+  --foil-base-transform: rotate(-8deg);
 }
 
 .hero-card-3 {
-  left: 25%;
-  top: 62%;
   z-index: 3;
-  --foil-base-transform: translate(-50%, -50%) rotate(-17deg);
+  --foil-base-transform: rotate(-5deg);
 }
 
 .hero-card-4 {
-  left: 61%;
-  top: 73%;
   z-index: 2;
-  width: clamp(142px, 15vw, 238px);
-  --foil-base-transform: translate(-50%, -50%) rotate(16deg);
+  --foil-base-transform: rotate(9deg);
 }
 
 .hero-card-5 {
-  left: 30%;
-  top: 28%;
   z-index: 1;
-  width: clamp(130px, 14vw, 218px);
-  --foil-base-transform: translate(-50%, -50%) rotate(9deg);
+  --foil-base-transform: rotate(3deg);
 }
 
 .hero-meter {
-  position: absolute;
-  right: clamp(12px, 3vw, 40px);
-  bottom: 0;
-  left: clamp(12px, 6vw, 120px);
+  grid-column: 2;
+  align-self: end;
   z-index: 3;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

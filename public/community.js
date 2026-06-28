@@ -9,7 +9,7 @@ const seedPosts = [
   {
     id: newId(),
     board: "notice",
-    title: "Riftbound.win BBS",
+    title: "Riftbound.kr BBS",
     body: "이미지와 영상을 붙여넣어 올릴 수 있는 커뮤니티 보드입니다. 서버 API가 없으면 현재 브라우저에만 임시 저장됩니다.",
     votes: 18,
     comments: 2,
