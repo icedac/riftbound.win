@@ -9,6 +9,7 @@ import {
   sectionForCard,
   normalizeCardId,
   parseDeckList,
+  splitRuneChannels,
   summarizeDeck,
   validateRiftboundDeck,
 } from "../public/deck-utils.js";
@@ -279,4 +280,28 @@ test("draws separate rune channel groups for the deck editor", () => {
     draw.runeChannels.flat().map((entry) => entry.id),
     draw.runes.map((entry) => entry.id)
   );
+});
+
+test("splits the rune deck into two visible channel groups", () => {
+  const index = createCardIndex(cards);
+  const sections = buildDeckSections(
+    [
+      { id: "OGN-126", quantity: 7 },
+      { id: "OGN-042", quantity: 5 },
+    ],
+    index
+  );
+
+  const channels = splitRuneChannels(sections.runes, 2);
+
+  assert.equal(channels.length, 2);
+  assert.deepEqual(channels.map((channel) => channel.reduce((total, entry) => total + entry.quantity, 0)), [6, 6]);
+  assert.deepEqual(channels[0].map((entry) => [entry.id, entry.quantity]), [
+    ["OGN-126", 4],
+    ["OGN-042", 2],
+  ]);
+  assert.deepEqual(channels[1].map((entry) => [entry.id, entry.quantity]), [
+    ["OGN-126", 3],
+    ["OGN-042", 3],
+  ]);
 });

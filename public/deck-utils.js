@@ -133,6 +133,33 @@ export function buildDeckSections(entries = [], cardsOrIndex = []) {
   return sections;
 }
 
+export function splitRuneChannels(entries = [], channelCount = 2) {
+  const channelTotal = Math.max(1, Math.floor(Number(channelCount) || 1));
+  const buckets = Array.from({ length: channelTotal }, () => ({
+    order: [],
+    byId: new Map(),
+  }));
+  let copyIndex = 0;
+
+  for (const entry of entries) {
+    const id = normalizeCardId(entry?.id);
+    const quantity = Number(entry?.quantity) || 0;
+    if (!id || quantity <= 0) continue;
+
+    for (let i = 0; i < quantity; i += 1) {
+      const bucket = buckets[copyIndex % channelTotal];
+      if (!bucket.byId.has(id)) {
+        bucket.order.push(id);
+        bucket.byId.set(id, { ...entry, id, quantity: 0 });
+      }
+      bucket.byId.get(id).quantity += 1;
+      copyIndex += 1;
+    }
+  }
+
+  return buckets.map((bucket) => bucket.order.map((id) => bucket.byId.get(id)));
+}
+
 export function flattenDeckSections(sections = {}) {
   return ["main", "runes", "legends", "battlefields", "unknown"].flatMap((section) =>
     (sections[section] ?? []).map((entry) => ({ ...entry, section }))

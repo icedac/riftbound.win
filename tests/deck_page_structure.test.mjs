@@ -41,7 +41,10 @@ test("deck editor keeps deck list, card picker, and inspector in a first-viewpor
 });
 
 test("deck editor renders separate rune channel labels", () => {
+  assert.match(js, /splitRuneChannels/);
   assert.match(js, /Rune channel 1/);
   assert.match(js, /Rune channel 2/);
+  assert.match(js, /compactSection\("Rune channel 1"/);
+  assert.match(js, /compactSection\("Rune channel 2"/);
   assert.doesNotMatch(js, /Channel 2 runes/);
 });

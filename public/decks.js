@@ -6,14 +6,16 @@ import {
   flattenDeckSections,
   parseDeckList,
   sectionForCard,
+  splitRuneChannels,
   summarizeDeck,
   validateRiftboundDeck,
-} from "/deck-utils.js?v=20260628-deckeditor1";
+} from "/deck-utils.js?v=20260628-runechannels1";
 import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 
 const STORAGE_KEY = "riftbound.deck.v2";
 const RESULT_LIMIT = 80;
 const RUNE_CHANNEL_LABELS = ["Rune channel 1", "Rune channel 2"];
+const RUNE_CHANNEL_TARGET = 6;
 const sectionLabels = {
   main: "Main Deck",
   runes: "Rune Deck",
@@ -299,7 +301,14 @@ function renderTopDeckList(sections, validation) {
     compactSection("Main Deck", sections.main ?? [], "40+"),
     compactSection("Battlefields", sections.battlefields ?? [], 3)
   );
-  els.runeDeckList.replaceChildren(compactSection("Rune Deck", sections.runes ?? [], 12));
+  const [runeChannelOne = [], runeChannelTwo = []] = splitRuneChannels(
+    sections.runes ?? [],
+    RUNE_CHANNEL_LABELS.length
+  );
+  els.runeDeckList.replaceChildren(
+    compactSection("Rune channel 1", runeChannelOne, RUNE_CHANNEL_TARGET),
+    compactSection("Rune channel 2", runeChannelTwo, RUNE_CHANNEL_TARGET)
+  );
 }
 
 function compactSection(label, entries, target) {
