@@ -2,7 +2,7 @@ import {
   authProviderActions,
   authProviderDetail,
   authProviderLabel,
-} from "/auth-state.js?v=20260628-authlabel1";
+} from "/auth-state.js?v=20260628-readiness1";
 
 const shell = document.querySelector("[data-auth-shell]");
 

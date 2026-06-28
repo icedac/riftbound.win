@@ -41,6 +41,52 @@ export function authReadinessMessage(me = {}) {
   return `${joinLabels(missing.map((action) => action.label))} login setup is incomplete.`;
 }
 
+export function runtimeSetupItems(me = {}) {
+  const authItems = authProviderActions(me).map((action) => ({
+    key: action.provider,
+    label: `${action.label} login`,
+    status: action.enabled ? "Ready" : "Needs setup",
+    tone: action.enabled ? "ready" : "warning",
+    detail: action.enabled
+      ? "OAuth provider configured"
+      : action.missing?.length
+        ? `Missing ${action.missing.join(", ")}`
+        : "OAuth provider setup is incomplete",
+    callbackUrl: action.callbackUrl,
+  }));
+
+  return [...authItems, mediaSetupItem(me?.media || {})];
+}
+
+function mediaSetupItem(media = {}) {
+  if (media.store === "r2") {
+    return {
+      key: "media",
+      label: "Media uploads",
+      status: "Ready",
+      tone: "ready",
+      detail: `R2 MEDIA binding connected; uploads support ${formatBytes(media.max_upload_bytes)} media and ${formatBytes(media.max_avatar_bytes)} avatars.`,
+      callbackUrl: "",
+    };
+  }
+
+  return {
+    key: "media",
+    label: "Media uploads",
+    status: "D1 fallback",
+    tone: "warning",
+    detail: `R2 MEDIA binding is not connected; uploads are limited to ${formatBytes(media.max_upload_bytes)} media and ${formatBytes(media.max_avatar_bytes)} avatars.`,
+    callbackUrl: "",
+  };
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 function joinLabels(labels) {
   if (labels.length <= 1) return labels[0] || "";
   return `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;

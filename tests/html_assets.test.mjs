@@ -124,6 +124,15 @@ test("auth and profile apps cache-bust auth state helper imports", async () => {
   }
 });
 
+test("profile page exposes runtime setup readiness diagnostics", async () => {
+  const html = await readFile(new URL("../public/profile/index.html", import.meta.url), "utf8");
+  const source = await readFile(new URL("../public/profile.js", import.meta.url), "utf8");
+
+  assert.match(html, /id="setupList"/);
+  assert.match(source, /runtimeSetupItems/);
+  assert.match(source, /renderSetupReadiness/);
+});
+
 test("public page scripts are cache-busted", async () => {
   for (const path of pages) {
     const html = await readFile(new URL(`../${path}`, import.meta.url), "utf8");

@@ -6,6 +6,7 @@ import {
   authProviderDetail,
   authProviderLabel,
   authReadinessMessage,
+  runtimeSetupItems,
 } from "../public/auth-state.js";
 
 test("authProviderActions returns enabled login links only for configured providers", () => {
@@ -93,4 +94,55 @@ test("authReadinessMessage names missing provider setup", () => {
   );
 
   assert.equal(authReadinessMessage({ auth: { providers: {} } }), "Sign in with Google or Naver.");
+});
+
+test("runtimeSetupItems summarizes OAuth callbacks and media binding status", () => {
+  const items = runtimeSetupItems({
+    auth: {
+      providers: {
+        google: {
+          configured: false,
+          callback_url: "https://riftbound.win/api/auth/google/callback",
+          missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
+        },
+        naver: {
+          configured: true,
+          callback_url: "https://riftbound.win/api/auth/naver/callback",
+          missing: [],
+        },
+      },
+    },
+    media: {
+      store: "d1-inline",
+      max_upload_bytes: 1048576,
+      max_avatar_bytes: 1048576,
+    },
+  });
+
+  assert.deepEqual(items, [
+    {
+      key: "google",
+      label: "Google login",
+      status: "Needs setup",
+      tone: "warning",
+      detail: "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET",
+      callbackUrl: "https://riftbound.win/api/auth/google/callback",
+    },
+    {
+      key: "naver",
+      label: "Naver login",
+      status: "Ready",
+      tone: "ready",
+      detail: "OAuth provider configured",
+      callbackUrl: "https://riftbound.win/api/auth/naver/callback",
+    },
+    {
+      key: "media",
+      label: "Media uploads",
+      status: "D1 fallback",
+      tone: "warning",
+      detail: "R2 MEDIA binding is not connected; uploads are limited to 1 MB media and 1 MB avatars.",
+      callbackUrl: "",
+    },
+  ]);
 });

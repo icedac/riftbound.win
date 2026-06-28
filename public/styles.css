@@ -1937,9 +1937,9 @@ dialog::backdrop {
 
 .profile-frame {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(300px, 420px);
+  grid-template-columns: minmax(320px, 1fr) repeat(2, minmax(280px, 360px));
   gap: 18px;
-  width: min(1120px, 100%);
+  width: min(1380px, 100%);
   margin: 0 auto;
   padding: 28px clamp(16px, 4vw, 44px) 48px;
 }
@@ -2030,10 +2030,51 @@ dialog::backdrop {
 }
 
 .provider-row span,
+.setup-row span,
+.setup-row code,
 .profile-status {
   color: var(--muted);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.setup-list {
+  display: grid;
+  gap: 10px;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid rgb(255 255 255 / 7%);
+  border-radius: 8px;
+  background: #10161b;
+}
+
+.setup-row > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.setup-row strong {
+  color: #fff;
+}
+
+.setup-row code {
+  font-family: inherit;
+  color: #cbd5e1;
+}
+
+.setup-row[data-tone="ready"] > span {
+  color: #86efac;
+}
+
+.setup-row[data-tone="warning"] > span {
+  color: #facc15;
 }
 
 @media (max-width: 1120px) {

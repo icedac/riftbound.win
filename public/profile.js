@@ -1,4 +1,9 @@
-import { authProviderActions, authProviderDetail, authReadinessMessage } from "/auth-state.js?v=20260628-authsetup1";
+import {
+  authProviderActions,
+  authProviderDetail,
+  authReadinessMessage,
+  runtimeSetupItems,
+} from "/auth-state.js?v=20260628-readiness1";
 
 const els = {
   status: document.querySelector("#profileStatus"),
@@ -8,6 +13,7 @@ const els = {
   avatarInput: document.querySelector("#avatarInput"),
   avatarPreview: document.querySelector("#avatarPreview"),
   providers: document.querySelector("#providerList"),
+  setup: document.querySelector("#setupList"),
 };
 
 let currentUser = null;
@@ -67,6 +73,7 @@ async function loadProfile() {
   els.bio.value = data.user.bio || "";
   els.avatarPreview.src = data.user.avatar_url || "";
   renderProviders(data.providers || [], data);
+  renderSetupReadiness(data);
 }
 
 function renderSignedOut(data = null) {
@@ -74,6 +81,7 @@ function renderSignedOut(data = null) {
   els.status.textContent = authReadinessMessage(data);
   els.form.hidden = true;
   els.providers.replaceChildren(...authProviderActions(data).map((action) => providerRow(action.label, false, action)));
+  renderSetupReadiness(data);
 }
 
 function renderProviders(providers, data = null) {
@@ -113,6 +121,24 @@ function providerLink(label, action) {
     link.title = authProviderDetail(action);
   }
   return link;
+}
+
+function renderSetupReadiness(data = null) {
+  if (!els.setup) return;
+  els.setup.replaceChildren(...runtimeSetupItems(data).map(setupRow));
+}
+
+function setupRow(item) {
+  const row = document.createElement("div");
+  row.className = "setup-row";
+  row.dataset.tone = item.tone;
+
+  const copy = document.createElement("div");
+  copy.append(text("strong", item.label), text("span", item.detail));
+  if (item.callbackUrl) copy.append(text("code", item.callbackUrl));
+
+  row.append(copy, text("span", item.status));
+  return row;
 }
 
 async function uploadAvatar(file) {
