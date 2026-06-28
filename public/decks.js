@@ -8,7 +8,7 @@ import {
   sectionForCard,
   summarizeDeck,
   validateRiftboundDeck,
-} from "/deck-utils.js";
+} from "/deck-utils.js?v=20260628-deckutils1";
 import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
 
 const STORAGE_KEY = "riftbound.deck.v2";

@@ -59,6 +59,14 @@ test("cards app schedules an initial grid repair pass", async () => {
   assert.match(source, /shouldRepairInitialCardGrid/);
 });
 
+test("cards app recovers browser-restored zero-result filter state", async () => {
+  const source = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /resolveRestoredCardFilters/);
+  assert.match(source, /recoverRestoredCardState/);
+  assert.match(source, /addEventListener\("pageshow"/);
+});
+
 test("foil helper imports are cache-busted wherever foil rendering is used", async () => {
   for (const path of ["../public/app.js", "../public/decks.js", "../public/landing.js"]) {
     const source = await readFile(new URL(path, import.meta.url), "utf8");
@@ -66,6 +74,13 @@ test("foil helper imports are cache-busted wherever foil rendering is used", asy
     assert.match(source, /from "\/foil\.js\?v=[^"]+"/, path);
     assert.doesNotMatch(source, /from "\/foil\.js"/, path);
   }
+});
+
+test("deck editor cache-busts deck utility imports", async () => {
+  const source = await readFile(new URL("../public/decks.js", import.meta.url), "utf8");
+
+  assert.match(source, /from "\/deck-utils\.js\?v=[^"]+"/);
+  assert.doesNotMatch(source, /from "\/deck-utils\.js"/);
 });
 
 test("community app cache-busts media helper import", async () => {

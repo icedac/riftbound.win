@@ -1,5 +1,10 @@
 import { appendFoilLayers, bindFoilSurface } from "/foil.js?v=20260628-foilfix1";
-import { filterCards, normalizeSearch, resolveInitialCardFilters } from "/card-filter-state.js?v=20260628-cardboot3";
+import {
+  filterCards,
+  normalizeSearch,
+  resolveInitialCardFilters,
+  resolveRestoredCardFilters,
+} from "/card-filter-state.js?v=20260628-cardsrecover1";
 import { shouldRepairInitialCardGrid } from "/card-grid-repair.js?v=20260628-gridrepair1";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-cardboot3";
 
@@ -58,6 +63,7 @@ async function boot() {
   readInitialSearch();
   applyInitialFilters();
   scheduleInitialGridRepair();
+  scheduleRestoredStateRecovery();
 }
 
 function buildFilters() {
@@ -100,6 +106,10 @@ function bindEvents() {
   els.closeDetail.addEventListener("click", () => els.detail.close());
   els.detail.addEventListener("click", (event) => {
     if (event.target === els.detail) els.detail.close();
+  });
+  window.addEventListener("pageshow", recoverRestoredCardState);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) recoverRestoredCardState();
   });
 }
 
@@ -150,6 +160,25 @@ function scheduleInitialGridRepair() {
       if (state.filtered.length > 0) render();
     });
   });
+}
+
+function scheduleRestoredStateRecovery() {
+  window.setTimeout(recoverRestoredCardState, 350);
+}
+
+function recoverRestoredCardState() {
+  if (!state.cards.length || !els.grid) return;
+  const renderedCards = els.grid.querySelectorAll(".card").length;
+  if (renderedCards > 0 && state.filtered.length > 0) return;
+
+  const result = resolveRestoredCardFilters(state.cards, currentControlFilters());
+  const nextVisibleCount = Math.max(PAGE_SIZE, Math.min(state.visibleCount, result.filtered.length || PAGE_SIZE));
+  Object.assign(state, result.filters);
+  state.filtered = result.filtered;
+  state.visibleCount = nextVisibleCount;
+  syncFilterControls();
+  if (result.clearedSearch) clearQueryParam("q");
+  render();
 }
 
 function setupAutoPager() {
@@ -387,6 +416,20 @@ function syncFilterControls() {
   for (const [key] of selects) els[key].value = state[key] || "";
   els.backOnly.checked = state.backOnly;
   els.hideBanned.checked = state.hideBanned;
+}
+
+function currentControlFilters() {
+  return {
+    search: els.search.value,
+    color: els.color.value,
+    type: els.type.value,
+    set: els.set.value,
+    rarity: els.rarity.value,
+    cost: els.cost.value,
+    tag: els.tag.value,
+    backOnly: els.backOnly.checked,
+    hideBanned: els.hideBanned.checked,
+  };
 }
 
 function clearQueryParam(key) {

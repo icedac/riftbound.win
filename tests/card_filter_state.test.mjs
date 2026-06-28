@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveInitialCardFilters } from "../public/card-filter-state.js";
+import { resolveInitialCardFilters, resolveRestoredCardFilters } from "../public/card-filter-state.js";
 
 const cards = [
   { id: "OGN-066-P", name: "Ahri Promo", banned: false, card_type: "Unit", set_name: "Origins", rarity: "Rare", colors: ["Calm"], tags: ["Ahri"] },
@@ -35,4 +35,28 @@ test("zero-result initial filter state is cleared on initial card page load", ()
   assert.equal(result.filters.color, "");
   assert.equal(result.clearedInitialSearch, true);
   assert.deepEqual(result.filtered.map((card) => card.id), ["OGN-066-P", "UNL-131"]);
+});
+
+test("zero-result browser-restored filter state is cleared when cards are available", () => {
+  const result = resolveRestoredCardFilters(cards, {
+    search: "abandon",
+    color: "Calm",
+    hideBanned: true,
+  });
+
+  assert.equal(result.recovered, true);
+  assert.equal(result.filters.search, "");
+  assert.equal(result.filters.color, "");
+  assert.deepEqual(result.filtered.map((card) => card.id), ["OGN-066-P", "UNL-131"]);
+});
+
+test("valid browser-restored filter state is kept", () => {
+  const result = resolveRestoredCardFilters(cards, {
+    search: "abandon",
+    hideBanned: true,
+  });
+
+  assert.equal(result.recovered, false);
+  assert.equal(result.filters.search, "abandon");
+  assert.deepEqual(result.filtered.map((card) => card.id), ["UNL-131"]);
 });

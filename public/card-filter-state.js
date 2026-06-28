@@ -1,15 +1,30 @@
 export function resolveInitialCardFilters(cards, filters = {}) {
+  const result = resolveRestoredCardFilters(cards, filters);
+  return {
+    filters: result.filters,
+    filtered: result.filtered,
+    clearedInitialSearch: result.clearedSearch,
+  };
+}
+
+export function resolveRestoredCardFilters(cards, filters = {}) {
   const normalized = normalizeFilters(filters);
   const filtered = filterCards(cards, normalized);
-  if (filtered.length > 0 || !hasRecoverableInitialFilter(normalized)) {
-    return { filters: normalized, filtered, clearedInitialSearch: false };
+  if (filtered.length > 0) {
+    return { filters: normalized, filtered, recovered: false, clearedSearch: false };
   }
 
   const cleared = normalizeFilters({});
+  const fallback = filterCards(cards, cleared);
+  if (fallback.length === 0 || !hasRecoverableInitialFilter(normalized)) {
+    return { filters: normalized, filtered, recovered: false, clearedSearch: false };
+  }
+
   return {
     filters: cleared,
-    filtered: filterCards(cards, cleared),
-    clearedInitialSearch: Boolean(normalized.search),
+    filtered: fallback,
+    recovered: true,
+    clearedSearch: Boolean(normalized.search),
   };
 }
 
