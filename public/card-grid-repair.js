@@ -1,3 +1,5 @@
+export const GRID_RECOVERY_WATCHDOG_MS = 15000;
+
 export function shouldRepairInitialCardGrid({
   totalCards = 0,
   filteredCards = 0,
@@ -20,4 +22,12 @@ export function shouldRecoverRenderedCardGrid({
     expectedVisible > 0 &&
     Math.max(0, renderedCards) < expectedVisible
   );
+}
+
+export function shouldKeepCardGridRecoveryWatchdog({
+  totalCards = 0,
+  elapsedMs = 0,
+  maxMs = GRID_RECOVERY_WATCHDOG_MS,
+} = {}) {
+  return totalCards > 0 && Math.max(0, elapsedMs) < Math.max(0, maxMs);
 }

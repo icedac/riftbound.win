@@ -6,9 +6,11 @@ import {
   resolveRestoredCardFilters,
 } from "/card-filter-state.js?v=20260628-cardsrecover1";
 import {
+  GRID_RECOVERY_WATCHDOG_MS,
+  shouldKeepCardGridRecoveryWatchdog,
   shouldRecoverRenderedCardGrid,
   shouldRepairInitialCardGrid,
-} from "/card-grid-repair.js?v=20260628-cardsvisible1";
+} from "/card-grid-repair.js?v=20260628-cardswatch1";
 import { PAGE_SIZE, hasMoreCards, nextAutoVisibleCount } from "/paging.js?v=20260628-scrollrestore1";
 
 const GRID_RECOVERY_DELAYS = [0, 100, 350, 1000, 2000];
@@ -29,6 +31,8 @@ const state = {
   autoLoadFrame: 0,
   autoPager: null,
   initialGridRepairRan: false,
+  gridRecoveryStartedAt: 0,
+  gridRecoveryTimer: 0,
 };
 
 const els = {
@@ -70,6 +74,7 @@ async function boot() {
   applyInitialFilters();
   scheduleInitialGridRepair();
   scheduleRestoredStateRecovery();
+  startGridRecoveryWatchdog();
 }
 
 function disableStaleScrollRestoration() {
@@ -179,6 +184,29 @@ function scheduleRestoredStateRecovery() {
   for (const delay of GRID_RECOVERY_DELAYS) {
     window.setTimeout(recoverRestoredCardState, delay);
   }
+}
+
+function startGridRecoveryWatchdog() {
+  state.gridRecoveryStartedAt = now();
+  if (state.gridRecoveryTimer) window.clearTimeout(state.gridRecoveryTimer);
+  state.gridRecoveryTimer = 0;
+  runGridRecoveryWatchdog();
+}
+
+function runGridRecoveryWatchdog() {
+  recoverRestoredCardState();
+  const elapsedMs = now() - state.gridRecoveryStartedAt;
+  if (
+    !shouldKeepCardGridRecoveryWatchdog({
+      totalCards: state.cards.length,
+      elapsedMs,
+      maxMs: GRID_RECOVERY_WATCHDOG_MS,
+    })
+  ) {
+    state.gridRecoveryTimer = 0;
+    return;
+  }
+  state.gridRecoveryTimer = window.setTimeout(runGridRecoveryWatchdog, 500);
 }
 
 function recoverRestoredCardState() {
@@ -583,6 +611,10 @@ function emptyState() {
 
 function cssToken(value) {
   return String(value).replace(/[^a-z0-9_-]/gi, "");
+}
+
+function now() {
+  return window.performance?.now?.() ?? Date.now();
 }
 
 boot().catch((error) => {

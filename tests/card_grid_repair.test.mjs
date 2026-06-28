@@ -64,3 +64,30 @@ test("recovers when restored browser DOM is missing visible cards", () => {
     false
   );
 });
+
+test("keeps a short recovery watchdog alive after the first successful render", () => {
+  assert.equal(
+    repair.shouldKeepCardGridRecoveryWatchdog?.({
+      totalCards: 1147,
+      elapsedMs: 3000,
+      maxMs: 15000,
+    }),
+    true
+  );
+  assert.equal(
+    repair.shouldKeepCardGridRecoveryWatchdog?.({
+      totalCards: 1147,
+      elapsedMs: 15100,
+      maxMs: 15000,
+    }),
+    false
+  );
+  assert.equal(
+    repair.shouldKeepCardGridRecoveryWatchdog?.({
+      totalCards: 0,
+      elapsedMs: 3000,
+      maxMs: 15000,
+    }),
+    false
+  );
+});
