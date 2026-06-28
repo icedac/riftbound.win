@@ -249,6 +249,7 @@ function applyEvent(table, event) {
   if (event.type === "card.move") applyMove(table, event.payload);
   if (event.type === "card.reveal") applyReveal(table, event.payload);
   if (event.type === "card.flip") applyFlip(table, event.payload);
+  if (event.type === "card.exhaust") applyExhaust(table, event.payload);
   if (event.type === "turn.pass") {
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
@@ -341,8 +342,15 @@ function drawOpeningHands(table) {
 function beginTurn(table, userId) {
   const seat = (table.seats || []).find((item) => item.user_id === userId);
   if (!seat) return;
+  readySeatCards(seat);
   moveCards(seat, "rune_deck", "rune_pool", 2);
   moveCards(seat, "main_deck", "hand", 1);
+}
+
+function readySeatCards(seat) {
+  for (const zone of ["legend_zone", "battlefields", "base", "rune_pool", "battlefield"]) {
+    for (const card of seat.zones?.[zone] || []) card.exhausted = false;
+  }
 }
 
 function moveCards(seat, from, to, count) {
@@ -385,6 +393,17 @@ function applyFlip(table, payload = {}) {
   cards[index].face_up = typeof payload.face_up === "boolean" ? payload.face_up : !current;
 }
 
+function applyExhaust(table, payload = {}) {
+  const seat = table.seats[Number(payload.seat_index || 0)];
+  const zone = zoneName(payload.zone || "battlefield");
+  const cards = seat?.zones?.[zone];
+  if (!cards) return;
+  const index = selectedCardIndex(cards, payload);
+  if (index < 0) return;
+  const current = cards[index].exhausted === true;
+  cards[index].exhausted = typeof payload.exhausted === "boolean" ? payload.exhausted : !current;
+}
+
 function selectedCardIndex(cards = [], payload = {}) {
   if (payload.instance_id) {
     return cards.findIndex((card) => card.instance_id === payload.instance_id);
@@ -410,6 +429,7 @@ function nextSeatUserId(table, actorId) {
 function eventSummary(event) {
   if (event.type === "card.move") return `${event.payload.count || 1} card(s): ${event.payload.from} -> ${event.payload.to}`;
   if (event.type === "card.flip") return `Flip selected card in ${event.payload.zone || "battlefield"} ${event.payload.face_up === false ? "face down" : "face up"}`;
+  if (event.type === "card.exhaust") return `${event.payload.exhausted === false ? "Ready" : "Exhaust"} selected card in ${event.payload.zone || "battlefield"}`;
   if (event.type === "chat.message") return `Chat: ${event.payload.text || ""}`;
   if (event.type === "voice.presence") return event.payload.talking ? "Voice active" : "Voice idle";
   if (event.type === "score.point") return `Score point: +${scoreAmount(event.payload?.amount)}`;

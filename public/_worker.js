@@ -971,10 +971,10 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
 }
 
 function privateZoneActionError(table, user, eventType, payload = {}) {
-  if (!new Set(["card.move", "card.reveal", "card.flip"]).has(eventType)) return null;
+  if (!new Set(["card.move", "card.reveal", "card.flip", "card.exhaust"]).has(eventType)) return null;
   const seat = table.seats?.[Number(payload.seat_index || 0)];
   if (!seat || seat.user_id === user.id) return null;
-  const zone = zoneName(eventType === "card.flip" ? payload.zone || "battlefield" : payload.from || "hand");
+  const zone = zoneName(new Set(["card.flip", "card.exhaust"]).has(eventType) ? payload.zone || "battlefield" : payload.from || "hand");
   if (!isPrivateCardZone(zone)) return null;
   return { status: 403, message: "Private zone requires owner" };
 }
@@ -984,11 +984,11 @@ function hostUserId(table) {
 }
 
 function activePlaygroundEventTypes() {
-  return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "score.point", "result.propose", "player.concede"]);
+  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "turn.pass", "score.point", "result.propose", "player.concede"]);
 }
 
 function turnScopedPlaygroundEventTypes() {
-  return new Set(["card.move", "card.reveal", "card.flip", "turn.pass", "score.point"]);
+  return new Set(["card.move", "card.reveal", "card.flip", "card.exhaust", "turn.pass", "score.point"]);
 }
 
 function applyPlaygroundEvent(table, event) {
@@ -1002,6 +1002,7 @@ function applyPlaygroundEvent(table, event) {
   if (event.type === "card.move") applyCardMove(table, event.payload);
   if (event.type === "card.reveal") applyCardReveal(table, event.payload);
   if (event.type === "card.flip") applyCardFlip(table, event.payload);
+  if (event.type === "card.exhaust") applyCardExhaust(table, event.payload);
   if (event.type === "turn.pass") {
     table.turn_player_id = event.payload.to_user_id || nextSeatUserId(table, event.actor_id);
     beginTurn(table, table.turn_player_id);
@@ -1036,8 +1037,15 @@ function drawOpeningHands(table) {
 function beginTurn(table, userId) {
   const seat = (table.seats || []).find((item) => item.user_id === userId);
   if (!seat) return;
+  readySeatCards(seat);
   moveCards(seat, "rune_deck", "rune_pool", 2);
   moveCards(seat, "main_deck", "hand", 1);
+}
+
+function readySeatCards(seat) {
+  for (const zone of ["legend_zone", "battlefields", "base", "rune_pool", "battlefield"]) {
+    for (const card of seat.zones?.[zone] || []) card.exhausted = false;
+  }
 }
 
 function moveCards(seat, from, to, count) {
@@ -1078,6 +1086,17 @@ function applyCardFlip(table, payload = {}) {
   if (index < 0) return;
   const currentFaceUp = cards[index].face_up !== false;
   cards[index].face_up = typeof payload.face_up === "boolean" ? payload.face_up : !currentFaceUp;
+}
+
+function applyCardExhaust(table, payload = {}) {
+  const seat = table.seats?.[Number(payload.seat_index || 0)];
+  const zone = zoneName(payload.zone || "battlefield");
+  const cards = seat?.zones?.[zone];
+  if (!cards) return;
+  const index = selectedCardIndex(cards, payload);
+  if (index < 0) return;
+  const currentExhausted = cards[index].exhausted === true;
+  cards[index].exhausted = typeof payload.exhausted === "boolean" ? payload.exhausted : !currentExhausted;
 }
 
 function selectedCardIndex(cards = [], payload = {}) {
@@ -1154,7 +1173,19 @@ function nextSeatUserId(table, actorId) {
 }
 
 function validPlaygroundEventType(type) {
-  return new Set(["game.start", "card.move", "card.reveal", "card.flip", "turn.pass", "chat.message", "voice.presence", "score.point", "result.propose", "player.concede"]).has(type);
+  return new Set([
+    "game.start",
+    "card.move",
+    "card.reveal",
+    "card.flip",
+    "card.exhaust",
+    "turn.pass",
+    "chat.message",
+    "voice.presence",
+    "score.point",
+    "result.propose",
+    "player.concede",
+  ]).has(type);
 }
 
 function registerPlaygroundSocket(tableId, userId, socket) {

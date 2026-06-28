@@ -1419,7 +1419,10 @@ fn private_zone_action_denied(
     event_type: &str,
     payload: &Value,
 ) -> bool {
-    if !matches!(event_type, "card.move" | "card.reveal" | "card.flip") {
+    if !matches!(
+        event_type,
+        "card.move" | "card.reveal" | "card.flip" | "card.exhaust"
+    ) {
         return false;
     }
     let seat_index = payload
@@ -1436,7 +1439,7 @@ fn private_zone_action_denied(
     if seat.get("user_id").and_then(Value::as_str) == Some(user.id.as_str()) {
         return false;
     }
-    let zone = if event_type == "card.flip" {
+    let zone = if matches!(event_type, "card.flip" | "card.exhaust") {
         payload
             .get("zone")
             .and_then(Value::as_str)
@@ -1473,6 +1476,7 @@ fn active_playground_event_type(value: &str) -> bool {
         "card.move"
             | "card.reveal"
             | "card.flip"
+            | "card.exhaust"
             | "turn.pass"
             | "score.point"
             | "result.propose"
@@ -1483,7 +1487,7 @@ fn active_playground_event_type(value: &str) -> bool {
 fn turn_scoped_playground_event_type(value: &str) -> bool {
     matches!(
         value,
-        "card.move" | "card.reveal" | "card.flip" | "turn.pass" | "score.point"
+        "card.move" | "card.reveal" | "card.flip" | "card.exhaust" | "turn.pass" | "score.point"
     )
 }
 
@@ -1512,6 +1516,9 @@ fn apply_playground_event(table: &mut Value, event: &Value) {
     }
     if event_type == "card.flip" {
         apply_card_flip(table, &event["payload"]);
+    }
+    if event_type == "card.exhaust" {
+        apply_card_exhaust(table, &event["payload"]);
     }
     if event_type == "turn.pass" {
         let to_user_id = event["payload"]
@@ -1598,8 +1605,37 @@ fn begin_playground_turn(table: &mut Value, user_id: &str) {
     else {
         return;
     };
+    ready_playground_seat(table, seat_index);
     move_playground_cards(table, seat_index, "rune_deck", "rune_pool", 2);
     move_playground_cards(table, seat_index, "main_deck", "hand", 1);
+}
+
+fn ready_playground_seat(table: &mut Value, seat_index: usize) {
+    let Some(zones) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+        .and_then(|seat| seat.get_mut("zones"))
+        .and_then(Value::as_object_mut)
+    else {
+        return;
+    };
+    for zone in [
+        "legend_zone",
+        "battlefields",
+        "base",
+        "rune_pool",
+        "battlefield",
+    ] {
+        let Some(cards) = zones.get_mut(zone).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for card in cards {
+            if let Some(card) = card.as_object_mut() {
+                card.insert("exhausted".to_string(), json!(false));
+            }
+        }
+    }
 }
 
 fn move_playground_cards(table: &mut Value, seat_index: usize, from: &str, to: &str, count: usize) {
@@ -1764,6 +1800,44 @@ fn apply_card_flip(table: &mut Value, payload: &Value) {
         .unwrap_or(!current_face_up);
     if let Some(card) = zone_cards[index].as_object_mut() {
         card.insert("face_up".to_string(), json!(next_face_up));
+    }
+}
+
+fn apply_card_exhaust(table: &mut Value, payload: &Value) {
+    let seat_index = payload
+        .get("seat_index")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let zone = zone_name(
+        payload
+            .get("zone")
+            .and_then(Value::as_str)
+            .unwrap_or("battlefield"),
+    );
+    let Some(zone_cards) = table
+        .get_mut("seats")
+        .and_then(Value::as_array_mut)
+        .and_then(|seats| seats.get_mut(seat_index))
+        .and_then(|seat| seat.get_mut("zones"))
+        .and_then(Value::as_object_mut)
+        .and_then(|zones| zones.get_mut(&zone))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let Some(index) = selected_card_index(zone_cards, payload) else {
+        return;
+    };
+    let current_exhausted = zone_cards[index]
+        .get("exhausted")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let next_exhausted = payload
+        .get("exhausted")
+        .and_then(Value::as_bool)
+        .unwrap_or(!current_exhausted);
+    if let Some(card) = zone_cards[index].as_object_mut() {
+        card.insert("exhausted".to_string(), json!(next_exhausted));
     }
 }
 
@@ -1962,6 +2036,7 @@ fn valid_playground_event_type(value: &str) -> bool {
             | "card.move"
             | "card.reveal"
             | "card.flip"
+            | "card.exhaust"
             | "turn.pass"
             | "chat.message"
             | "voice.presence"

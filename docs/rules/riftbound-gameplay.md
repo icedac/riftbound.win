@@ -5,7 +5,7 @@ Last checked: 2026-06-28
 Primary sources:
 - Official Rules Hub: https://riftbound.leagueoflegends.com/en-us/rules-hub/
 - Core Rules PDF from Rules Hub, listed as last updated 2026-03-30: https://cmsassets.rgpub.io/sanity/files/dsfx7636/news_live/861747d1d4d505b7c14d73aba9749d1c3a209a67.pdf
-- How to Play quick start: https://riftbound.leagueoflegends.com/en-us/news/rules-and-releases/how-to-play-get-started/
+- How to Play quick start: https://riftbound.leagueoflegends.com/en-us/news/rules-and-releases/how-to-play-get-started/ (redirects to `playriftbound.com` as of 2026-06-28)
 - Unleashed Core Rules patch notes: https://riftbound.leagueoflegends.com/en-us/news/rules-and-releases/riftbound-core-rules-unleashed-patch-notes/
 
 This file is an implementation note for Riftbound.kr Playground. It is not a replacement for the official Core Rules.
@@ -34,20 +34,23 @@ Playground implication:
 
 - Play proceeds in cyclic turns until a player wins.
 - Turn state can be neutral/showdown and open/closed. In a neutral open main phase, the turn player can take discretionary actions.
-- Start of turn readies controlled objects, handles battlefield holding/scoring, channels runes, draws 1, and clears unspent rune resources.
+- Start of turn readies controlled objects, handles battlefield holding/scoring, channels runes, draws 1, and clears temporary unspent rune resources.
+- Official quick-start material describes two new runes each turn and says those runes can be turned sideways for temporary costs or returned to the rune deck for larger costs. Playground should therefore keep channeled rune cards in the rune area and track temporary use with an `exhausted` state instead of deleting those cards at turn start.
 - The main phase is where most player-directed actions happen.
 - A player ends their turn when they have no more discretionary actions they want to take. The next player in turn order becomes turn player.
 
 Playground implication:
 - `turn.pass` is valid as the coarse first version.
 - Turn-scoped actions such as drawing, channeling, moving/flipping/revealing cards, passing, and manual scoring are accepted only from `turn_player_id`. Chat, voice, mutual result proposals, and concession are still allowed outside the turn window.
-- Later, replace the single pass button with phase/task buttons: ready, hold score, channel 2 runes, draw 1, main actions, end.
+- Current Playground support: selected cards can be moved, flipped face up/down, and exhausted/readied. `turn.pass` now readies the next active player's public/board objects, then channels 2 runes and draws 1.
+- Later, replace the single pass button with phase/task buttons: ready/awaken, hold score, channel 2 runes, draw 1, main actions, end.
 - Store turn state on the table snapshot, not only in the event log, so replay can rebuild it deterministically.
 
 ## Core Actions To Model Next
 
 - Draw: move cards from `main_deck` to `hand`.
 - Channel runes: move up to 2 cards from `rune_deck` into a resource/rune area.
+- Exhaust/ready: turn a selected card sideways for temporary rune/resource use or other activated/attacking states, and ready controlled objects at the start of that player's next turn.
 - Play card: move a hand card to base, a battlefield, the chain, or trash depending on type and resolution.
 - Standard move: move a unit to a battlefield when allowed.
 - Conquer/hold scoring: battlefield control can generate victory points.
@@ -56,6 +59,7 @@ Playground implication:
 
 Playground implication:
 - Current `card.move`, `card.reveal`, and `card.flip` are the right primitive operations for manual play.
+- `card.exhaust` is the current primitive for sideways/ready state. It is intentionally manual; later resource payment automation can consume this same state rather than replacing the event log format.
 - Add higher-level buttons only when their event payloads can still replay into the same primitive zone changes.
 
 ## Victory And Results
@@ -72,7 +76,7 @@ Playground implication:
 
 ## Engine Backlog
 
-- Add explicit table phases and rune pool state.
+- Add explicit table phases and temporary rune/resource pool state separate from channeled rune cards.
 - Add public/private/secret card masking.
 - Add battlefield objects and control state.
 - Add automated battlefield scoring and control checks.

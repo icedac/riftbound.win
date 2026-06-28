@@ -430,6 +430,73 @@ class InMemoryD1Database {
   }
 }
 
+function seedPlaygroundDuel(db, { hostRunes = 4, guestRunes = 4 } = {}) {
+  const now = Date.now();
+  db.users.push(
+    {
+      id: "host-user",
+      display_name: "Host",
+      bio: "",
+      avatar_key: "",
+      avatar_type: "",
+      avatar_data: "",
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "guest-user",
+      display_name: "Guest",
+      bio: "",
+      avatar_key: "",
+      avatar_type: "",
+      avatar_data: "",
+      created_at: now,
+      updated_at: now,
+    }
+  );
+  db.sessions.push(
+    { id: "host-session", user_id: "host-user", expires_at: now + 60_000 },
+    { id: "guest-session", user_id: "guest-user", expires_at: now + 60_000 }
+  );
+  db.savedDecks.push(
+    {
+      id: "host-deck",
+      user_id: "host-user",
+      name: "Host Deck",
+      format: "constructed",
+      deck_json: JSON.stringify({
+        main: [{ id: "OGN-001", quantity: 5 }],
+        runes: [{ id: "OGN-R01", quantity: hostRunes }],
+      }),
+      created_at: now,
+      updated_at: now,
+    },
+    {
+      id: "guest-deck",
+      user_id: "guest-user",
+      name: "Guest Deck",
+      format: "constructed",
+      deck_json: JSON.stringify({
+        main: [{ id: "OGN-002", quantity: 5 }],
+        runes: [{ id: "OGN-R02", quantity: guestRunes }],
+      }),
+      created_at: now,
+      updated_at: now,
+    }
+  );
+}
+
+async function postPlaygroundEvent(env, tableId, sessionId, type, payload = {}) {
+  return worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: `rw_session=${sessionId}` },
+      body: JSON.stringify({ type, payload }),
+    }),
+    env
+  );
+}
+
 test("worker stores small pasted media in D1 when R2 is not configured", async () => {
   const db = new InMemoryD1Database();
   const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
@@ -816,6 +883,63 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(eventList.events[3].type, "card.flip");
   assert.equal(eventList.events[4].type, "turn.pass");
   assert.equal(eventList.events[5].type, "score.point");
+});
+
+test("worker records card exhaust state and readies channeled runes on new turns", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db, { hostRunes: 4, guestRunes: 4 });
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  const { table } = await create.json();
+  await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+
+  await postPlaygroundEvent(env, table.id, "host-session", "game.start");
+  const channelHost = await postPlaygroundEvent(env, table.id, "host-session", "card.move", {
+    seat_index: 0,
+    from: "rune_deck",
+    to: "rune_pool",
+    count: 2,
+  });
+  const channeled = await channelHost.json();
+  assert.equal(channelHost.status, 201);
+  assert.equal(channeled.table.seats[0].zones.rune_pool.length, 2);
+  assert.equal(channeled.table.seats[0].zones.rune_deck.length, 2);
+  const selectedRune = channeled.table.seats[0].zones.rune_pool[0].instance_id;
+
+  const exhaustRune = await postPlaygroundEvent(env, table.id, "host-session", "card.exhaust", {
+    seat_index: 0,
+    zone: "rune_pool",
+    instance_id: selectedRune,
+    exhausted: true,
+  });
+  assert.equal(exhaustRune.status, 201);
+  const exhausted = await exhaustRune.json();
+  assert.equal(exhausted.table.seats[0].zones.rune_pool[0].exhausted, true);
+
+  await postPlaygroundEvent(env, table.id, "host-session", "turn.pass", {});
+  const passBack = await postPlaygroundEvent(env, table.id, "guest-session", "turn.pass", {});
+
+  assert.equal(passBack.status, 201);
+  const returned = await passBack.json();
+  assert.equal(returned.table.turn_player_id, "host-user");
+  assert.equal(returned.table.seats[0].zones.rune_pool.length, 4);
+  assert.equal(returned.table.seats[0].zones.rune_deck.length, 0);
+  assert.equal(returned.table.seats[0].zones.rune_pool.find((card) => card.instance_id === selectedRune).exhausted, false);
 });
 
 test("worker completes playground tables when a player concedes", async () => {

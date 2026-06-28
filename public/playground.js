@@ -1,4 +1,4 @@
-import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground8";
+import { buildReplayFrames, replayTableEvents } from "/playground-state.js?v=20260628-playground9";
 import { isHiddenCard } from "/playground-visibility.js?v=20260628-playground1";
 import {
   canUseRealtimeTransport,
@@ -77,6 +77,7 @@ const els = {
   moveToZone: document.querySelector("#moveToZone"),
   moveSelectedCard: document.querySelector("#moveSelectedCard"),
   flipSelectedCard: document.querySelector("#flipSelectedCard"),
+  exhaustSelectedCard: document.querySelector("#exhaustSelectedCard"),
   cardPreview: document.querySelector("#cardHoverPreview"),
   passTurn: document.querySelector("#passTurn"),
 };
@@ -141,6 +142,7 @@ function bindEvents() {
   els.moveBattlefield.addEventListener("click", () => (selectedCardRecord() ? moveSelectedCardTo("battlefield") : appendAction("card.move", { seat_index: currentSeatIndex(), from: "hand", to: "battlefield", count: 1 })));
   els.moveSelectedCard.addEventListener("click", () => moveSelectedCardTo(els.moveToZone.value));
   els.flipSelectedCard.addEventListener("click", flipSelectedCard);
+  els.exhaustSelectedCard.addEventListener("click", exhaustSelectedCard);
   els.scorePoint.addEventListener("click", () => appendAction("score.point", { amount: 1, source: "manual" }));
   els.concedeGame.addEventListener("click", () => appendAction("player.concede", { user_id: currentUserId() }));
   els.passTurn.addEventListener("click", () => appendAction("turn.pass", { to_user_id: nextPlayerId() }));
@@ -273,6 +275,17 @@ async function flipSelectedCard() {
     zone: selected.zone,
     instance_id: selected.instanceId,
     face_up: selected.card.face_up === false,
+  });
+}
+
+async function exhaustSelectedCard() {
+  const selected = selectedCardRecord();
+  if (!selected) return;
+  await appendAction("card.exhaust", {
+    seat_index: selected.seatIndex,
+    zone: selected.zone,
+    instance_id: selected.instanceId,
+    exhausted: selected.card.exhausted !== true,
   });
 }
 
@@ -504,7 +517,7 @@ function renderTable() {
     control.disabled = !isTableActive(table) || controlsDisabled;
   }
   els.toggleVoice.disabled = controlsDisabled;
-  for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard]) {
+  for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard]) {
     control.disabled = !isTableActive(table) || controlsDisabled || !selectedCardRecord();
   }
   if (!table) {
@@ -693,6 +706,7 @@ function reportError(error) {
 function eventSummary(event) {
   if (event.type === "card.move") return `${event.payload?.count || 1} card(s): ${event.payload?.from} -> ${event.payload?.to}`;
   if (event.type === "card.flip") return `flip ${event.payload?.zone || "battlefield"}`;
+  if (event.type === "card.exhaust") return `${event.payload?.exhausted === false ? "ready" : "exhaust"} ${event.payload?.zone || "battlefield"}`;
   if (event.type === "card.reveal") return `reveal from ${event.payload?.from || "hand"}`;
   if (event.type === "chat.message") return `chat: ${event.payload?.text || ""}`;
   if (event.type === "voice.presence") return event.payload?.talking ? "voice active" : "voice idle";
@@ -770,6 +784,7 @@ function cardChip(card, seat, zone) {
     "card-chip",
     hidden ? "hidden-card" : "",
     card.face_up === false ? "face-down" : "",
+    card.exhausted === true ? "exhausted" : "",
     selected?.instanceId === card.instance_id ? "selected" : "",
   ]
     .filter(Boolean)

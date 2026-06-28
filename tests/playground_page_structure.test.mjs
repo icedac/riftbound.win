@@ -34,6 +34,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'value="rune_pool"',
     'id="moveSelectedCard"',
     'id="flipSelectedCard"',
+    'id="exhaustSelectedCard"',
     'value="base"',
     'value="legend_zone"',
     'value="battlefields"',
@@ -64,6 +65,7 @@ test("playground client uses shared server table APIs instead of browser-local t
   assert.match(js, /selectedCard/);
   assert.match(js, /instance_id/);
   assert.match(js, /card\.flip/);
+  assert.match(js, /card\.exhaust/);
   assert.match(js, /WebSocket/);
   assert.match(js, /RTCPeerConnection/);
   assert.doesNotMatch(js, /localStorage/);
@@ -123,6 +125,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /base/);
   assert.match(js, /function renderCardPreview/);
   assert.match(js, /isHiddenCard/);
+  assert.match(js, /exhausted/);
   assert.match(js, /function cardImageSrc/);
   assert.match(js, /document\.createElement\("img"\)/);
   assert.match(js, /mouseover/);

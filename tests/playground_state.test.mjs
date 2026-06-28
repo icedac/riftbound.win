@@ -13,14 +13,14 @@ import {
 const host = { id: "user-host", display_name: "Host" };
 const guest = { id: "user-guest", display_name: "Guest" };
 
-function savedDeck(id = "deck-1") {
+function savedDeck(id = "deck-1", runeQuantity = 2) {
   return {
     id,
     name: "Ahri Tempo",
     deck_json: {
       entries: [
         { id: "OGN-001", quantity: 5, section: "main" },
-        { id: "OGN-042", quantity: 2, section: "runes" },
+        { id: "OGN-042", quantity: runeQuantity, section: "runes" },
       ],
     },
   };
@@ -153,6 +153,33 @@ test("buildReplayFrames reconstructs table state from the persisted event log", 
 
   frames[1].table.seats[0].zones.hand[0].id = "MUTATED";
   assert.notEqual(table.seats[0].zones.hand[0].id, "MUTATED");
+});
+
+test("card exhaust state is logged and new turns ready channeled runes", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: savedDeck("deck-1", 4), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: savedDeck("deck-2", 4), user: guest, now: 1100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1200 });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "rune_deck", to: "rune_pool", count: 2 }, now: 1300 });
+  const selectedRune = table.seats[0].zones.rune_pool[0].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "card.exhaust",
+    payload: { seat_index: 0, zone: "rune_pool", instance_id: selectedRune, exhausted: true },
+    now: 1350,
+  });
+
+  assert.equal(table.seats[0].zones.rune_pool.length, 2);
+  assert.equal(table.seats[0].zones.rune_deck.length, 2);
+  assert.equal(table.seats[0].zones.rune_pool[0].exhausted, true);
+
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 1400 });
+  table = appendTableEvent(table, { actorId: guest.id, type: "turn.pass", payload: { to_user_id: host.id }, now: 1500 });
+
+  assert.equal(table.turn_player_id, host.id);
+  assert.equal(table.seats[0].zones.rune_pool.length, 4);
+  assert.equal(table.seats[0].zones.rune_deck.length, 0);
+  assert.equal(table.seats[0].zones.rune_pool.find((card) => card.instance_id === selectedRune).exhausted, false);
+  assert.equal(replayTableEvents(table.events)[2].summary, "Exhaust selected card in rune_pool");
 });
 
 test("card events can move a selected instance and flip it in place", () => {

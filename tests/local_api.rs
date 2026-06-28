@@ -397,6 +397,15 @@ async fn login(app: &axum::Router, provider: &str) -> String {
 }
 
 async fn create_test_deck(app: &axum::Router, cookie: &str, name: &str) -> Value {
+    create_test_deck_with_runes(app, cookie, name, 2).await
+}
+
+async fn create_test_deck_with_runes(
+    app: &axum::Router,
+    cookie: &str,
+    name: &str,
+    rune_quantity: usize,
+) -> Value {
     let payload = format!(
         r#"{{
           "name": "{name}",
@@ -404,7 +413,7 @@ async fn create_test_deck(app: &axum::Router, cookie: &str, name: &str) -> Value
           "deck_json": {{
             "legends": [{{"id": "UNL-236-STAR", "quantity": 1}}],
             "main": [{{"id": "OGN-001", "quantity": 5}}],
-            "runes": [{{"id": "OGN-R01", "quantity": 2}}],
+            "runes": [{{"id": "OGN-R01", "quantity": {rune_quantity}}}],
             "battlefields": [{{"id": "UNL-205", "quantity": 1}}, {{"id": "UNL-206", "quantity": 1}}, {{"id": "OGN-275", "quantity": 1}}]
           }}
         }}"#
@@ -823,6 +832,156 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
         table["table"]["seats"][0]["zones"]["battlefield"][0]["face_up"],
         false
     );
+}
+
+#[tokio::test]
+async fn local_playground_turn_start_readies_channeled_runes() {
+    let (app, _temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck_with_runes(&app, &host_cookie, "Host Rune Deck", 4).await;
+    let guest_deck = create_test_deck_with_runes(&app, &guest_cookie, "Guest Rune Deck", 4).await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap();
+    let host_user_id = created["table"]["seats"][0]["user_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::OK);
+
+    let start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(start.status(), StatusCode::CREATED);
+
+    let channel_host = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(
+            r#"{"type":"card.move","payload":{"seat_index":0,"from":"rune_deck","to":"rune_pool","count":2}}"#,
+        ),
+    )
+    .await;
+    assert_eq!(channel_host.status(), StatusCode::CREATED);
+    let channeled = json(channel_host).await;
+    assert_eq!(
+        channeled["table"]["seats"][0]["zones"]["rune_pool"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        channeled["table"]["seats"][0]["zones"]["rune_deck"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let selected_rune = channeled["table"]["seats"][0]["zones"]["rune_pool"][0]["instance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let exhaust_rune = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"type":"card.exhaust","payload":{{"seat_index":0,"zone":"rune_pool","instance_id":"{selected_rune}","exhausted":true}}}}"#
+        )),
+    )
+    .await;
+    assert_eq!(exhaust_rune.status(), StatusCode::CREATED);
+    let exhausted = json(exhaust_rune).await;
+    assert_eq!(
+        exhausted["table"]["seats"][0]["zones"]["rune_pool"][0]["exhausted"],
+        true
+    );
+
+    let pass_to_guest = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"turn.pass","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(pass_to_guest.status(), StatusCode::CREATED);
+
+    let pass_back = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"turn.pass","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(pass_back.status(), StatusCode::CREATED);
+    let returned = json(pass_back).await;
+    assert_eq!(returned["table"]["turn_player_id"], host_user_id);
+    assert_eq!(
+        returned["table"]["seats"][0]["zones"]["rune_pool"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert_eq!(
+        returned["table"]["seats"][0]["zones"]["rune_deck"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    let returned_runes = returned["table"]["seats"][0]["zones"]["rune_pool"]
+        .as_array()
+        .unwrap();
+    let readied_rune = returned_runes
+        .iter()
+        .find(|card| card["instance_id"] == selected_rune)
+        .unwrap();
+    assert_eq!(readied_rune["exhausted"], false);
 }
 
 #[tokio::test]

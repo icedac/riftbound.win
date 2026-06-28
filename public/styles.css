@@ -2474,6 +2474,12 @@ dialog::backdrop {
   color: #facc15;
 }
 
+.card-chip.exhausted {
+  transform: rotate(8deg);
+  border-color: rgb(251 191 36 / 58%);
+  box-shadow: inset 0 0 0 1px rgb(251 191 36 / 18%);
+}
+
 .card-chip.hidden-card {
   cursor: default;
   border-color: rgb(148 163 184 / 34%);
