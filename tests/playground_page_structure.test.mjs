@@ -129,8 +129,17 @@ test("playground client does not block profile and table boot on the card catalo
 
   assert.match(js, /async function loadProfile/);
   assert.match(js, /async function loadCardsQuietly/);
-  assert.match(js, /render\(\);\s+await loadProfile/);
+  assert.match(js, /await Promise\.all\(\[loadProfile\(\), loadSavedDecks\(\), loadTables\(\)\]\)/);
+  assert.match(js, /render\(\);\s+syncRealtime\(\);\s+loadCardsQuietly\(\)/);
   assert.doesNotMatch(js, /Promise\.all\(\s*\[\s*fetchJson\("\/cards\.json"/);
+});
+
+test("playground loads profile, saved decks, and tables in parallel during boot", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+
+  assert.match(js, /await Promise\.all\(\[loadProfile\(\), loadSavedDecks\(\), loadTables\(\)\]\)/);
+  assert.doesNotMatch(js, /await loadProfile\(\);\s+await Promise\.all\(\[loadSavedDecks\(\), loadTables\(\)\]\)/);
+  assert.doesNotMatch(js, /if \(!state\.me\) \{\s*state\.savedDecks = \[\];\s*return;\s*\}/);
 });
 
 test("playground client keeps Start host-only and locks card actions until active", async () => {

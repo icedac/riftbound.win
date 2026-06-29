@@ -112,8 +112,7 @@ async function boot() {
   const pathTableId = tableIdFromPath();
   if (pathTableId) state.selectedTableId = pathTableId;
   render();
-  await loadProfile();
-  await Promise.all([loadSavedDecks(), loadTables()]);
+  await Promise.all([loadProfile(), loadSavedDecks(), loadTables()]);
   render();
   syncRealtime();
   loadCardsQuietly();
@@ -222,10 +221,6 @@ async function loadCardsQuietly() {
 }
 
 async function loadSavedDecks() {
-  if (!state.me) {
-    state.savedDecks = [];
-    return;
-  }
   const data = await fetchJson("/api/saved-decks", { decks: [] });
   state.savedDecks = Array.isArray(data.decks) ? data.decks : [];
 }
