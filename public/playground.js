@@ -686,9 +686,7 @@ function renderTable() {
   }
   els.turnPhaseSelect.value = labelTurnPhaseValue(table.turn_phase);
   renderShowdownWinnerOptions(table);
-  els.tableTitle.textContent = `${table.id} · ${table.status} · turn ${playerName(table, table.turn_player_id)} · ${labelTurnPhase(
-    table.turn_phase
-  )} ${Number(table.turn_number || 0)}${table.active_showdown ? " · showdown" : ""}`;
+  els.tableTitle.textContent = tableTitleText(table);
   els.tableZones.replaceChildren(...orderedSeats(table).map(seatZones));
   renderSelectedCard();
   renderCardPreview();
@@ -704,22 +702,63 @@ function seatZones(seat) {
   const root = document.createElement("article");
   root.className = ["seat-board", seat.user_id === currentUserId() ? "is-current-player" : "is-opponent-player"].join(" ");
   root.dataset.seatIndex = seat.seat_index;
-  root.append(text("h3", `${seat.display_name} · ${seat.deck_name} · ${seat.points || 0} VP`));
+  root.append(seatHud(seat));
   const zones = document.createElement("div");
   zones.className = "zone-grid";
   for (const key of PLAYGROUND_ZONE_ORDER) {
+    const zoneCards = seat.zones?.[key] || [];
     const zone = document.createElement("div");
     zone.className = ["zone-cell", `zone-${key}`, zoneRoleClass(key)].join(" ");
+    if (!zoneCards.length) zone.classList.add("zone-empty");
     zone.dataset.zone = key;
-    zone.append(text("strong", labelZone(key)), text("span", `${seat.zones?.[key]?.length || 0}`));
+    zone.setAttribute("data-zone-role", zoneRoleClass(key).replace("zone-", ""));
+    const metadata = document.createElement("div");
+    metadata.className = "zone-metadata";
+    metadata.append(text("strong", labelZone(key)), text("span", `${zoneCards.length}`));
+    zone.append(metadata);
     const preview = document.createElement("div");
     preview.className = "zone-preview";
-    for (const card of (seat.zones?.[key] || []).slice(-6)) preview.append(cardChip(card, seat, key));
+    for (const card of zoneCards.slice(-zoneCardPreviewLimit(key))) preview.append(cardChip(card, seat, key));
     zone.append(preview);
     zones.append(zone);
   }
   root.append(zones);
   return root;
+}
+
+function zoneCardPreviewLimit(zone) {
+  if (["main_deck", "rune_deck", "discard", "removed", "revealed", "legend_zone", "champion_zone", "base"].includes(zone)) return 1;
+  if (zone === "battlefields") return 3;
+  return 6;
+}
+
+function tableTitleText(table) {
+  const status = String(table?.status || "waiting");
+  const headline = status.charAt(0).toUpperCase() + status.slice(1);
+  return `${headline} · ${playerName(table, table.turn_player_id)} · ${labelTurnPhase(table.turn_phase)} ${Number(table.turn_number || 0)}${
+    table.active_showdown ? " · Showdown" : ""
+  }`;
+}
+
+function seatHud(seat) {
+  const hud = document.createElement("header");
+  hud.className = "seat-hud";
+  const title = document.createElement("div");
+  title.append(text("h3", seat.display_name || "Player"), text("small", seat.deck_name || "Untitled Deck"));
+  const counters = document.createElement("div");
+  counters.className = "seat-counters";
+  for (const [label, value] of [
+    ["VP", seat.points || 0],
+    ["Hand", zoneCount(seat, "hand")],
+    ["Deck", zoneCount(seat, "main_deck")],
+    ["Runes", zoneCount(seat, "rune_pool")],
+  ]) {
+    const chip = document.createElement("span");
+    chip.append(text("b", value), document.createTextNode(label));
+    counters.append(chip);
+  }
+  hud.append(title, counters);
+  return hud;
 }
 
 function eventNode(event) {
@@ -991,9 +1030,11 @@ function renderCardPreview() {
   if (!els.cardPreview) return;
   const selected = selectedCardRecord(state.hoveredCard) || selectedCardRecord();
   if (!selected || isHiddenCard(selected.card)) {
+    els.cardPreview.classList.add("is-empty");
     els.cardPreview.replaceChildren(empty("Hover a card to read it."));
     return;
   }
+  els.cardPreview.classList.remove("is-empty");
   const catalog = catalogCard(selected.card);
   const preview = [];
   const imageSrc = cardImageSrc(selected.card);
