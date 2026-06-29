@@ -714,6 +714,11 @@ async fn append_playground_event(
             Json(json!({ "error": "Table is completed" })),
         )
             .into_response(),
+        Err(error) if error.to_string().contains("Game already started") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Game already started" })),
+        )
+            .into_response(),
         Err(error) if error.to_string().contains("Setup is closed") => (
             StatusCode::CONFLICT,
             Json(json!({ "error": "Setup is closed" })),
@@ -1447,8 +1452,8 @@ fn validate_playground_event(
         if playground_seat_len(table) < 2 {
             anyhow::bail!("Table needs two players");
         }
-        if table.get("status").and_then(Value::as_str) == Some("completed") {
-            anyhow::bail!("Table is completed");
+        if table.get("status").and_then(Value::as_str) != Some("waiting") {
+            anyhow::bail!("Game already started");
         }
         return Ok(());
     }

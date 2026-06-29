@@ -635,6 +635,19 @@ async fn local_playground_table_lifecycle_persists_snapshots_and_events() {
     let started = json(start).await;
     assert_eq!(started["event"]["sequence"], 1);
     assert_eq!(started["table"]["status"], "active");
+
+    let repeat_start = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/events"),
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(r#"{"type":"game.start","payload":{}}"#),
+    )
+    .await;
+    assert_eq!(repeat_start.status(), StatusCode::CONFLICT);
+    assert_eq!(json(repeat_start).await["error"], "Game already started");
+
     assert_eq!(
         started["table"]["seats"][0]["zones"]["hand"]
             .as_array()

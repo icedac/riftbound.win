@@ -983,7 +983,7 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
   if (eventType === "game.start") {
     if (hostUserId(table) !== user.id) return { status: 403, message: "Only the table host can start" };
     if ((table.seats || []).length < 2) return { status: 409, message: "Table needs two players" };
-    if (table.status === "completed") return { status: 409, message: "Table is completed" };
+    if (table.status !== "waiting") return { status: 409, message: "Game already started" };
     return null;
   }
   const privateActionError = privateZoneActionError(table, user, eventType, payload);

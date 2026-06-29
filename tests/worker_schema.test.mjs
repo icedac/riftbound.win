@@ -789,6 +789,18 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   const started = await start.json();
   assert.equal(started.event.sequence, 1);
   assert.equal(started.table.status, "active");
+
+  const repeatStart = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${tableId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ type: "game.start", payload: {} }),
+    }),
+    env
+  );
+  assert.equal(repeatStart.status, 409);
+  assert.equal((await repeatStart.json()).error, "Game already started");
+
   assert.equal(started.table.seats[0].zones.hand.length, 4);
   assert.equal(started.table.seats[1].zones.hand.length, 4);
   assert.equal(started.table.seats[0].zones.hand[0].id, "OGN-001");
