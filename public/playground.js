@@ -647,6 +647,7 @@ function tableButton(table) {
 function renderTable() {
   const table = currentTable();
   const controlsDisabled = !table || !state.me || !currentSeat();
+  const turnActionsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   const phaseControlsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   const selected = selectedCardRecord();
   els.startGame.disabled = !canStartTable(table);
@@ -654,22 +655,24 @@ function renderTable() {
   els.mulliganSelected.disabled = controlsDisabled || !isSetupOpen(table) || !selected || selected.zone !== "hand" || selected.seat.user_id !== currentUserId();
   els.shuffleMainDeck.disabled = controlsDisabled;
   els.shuffleRuneDeck.disabled = controlsDisabled;
-  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.concedeGame, els.passTurn, els.submitResult]) {
-    control.disabled = !isTableActive(table) || controlsDisabled;
+  for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.passTurn]) {
+    control.disabled = turnActionsDisabled;
   }
+  els.concedeGame.disabled = !isTableActive(table) || controlsDisabled;
+  els.submitResult.disabled = !isTableActive(table) || controlsDisabled;
   els.turnPhaseSelect.disabled = phaseControlsDisabled;
   els.setTurnPhase.disabled = phaseControlsDisabled;
   els.toggleVoice.disabled = controlsDisabled;
   for (const control of [els.moveToZone, els.moveSelectedCard, els.flipSelectedCard, els.exhaustSelectedCard, els.claimBattlefield]) {
-    control.disabled = !isTableActive(table) || controlsDisabled || !selected;
+    control.disabled = turnActionsDisabled || !selected;
   }
   const selectedOwnRune = selected?.zone === "rune_pool" && selected?.seat?.user_id === currentUserId();
-  els.spendRune.disabled = !isTableActive(table) || controlsDisabled || !selectedOwnRune;
-  els.recycleRune.disabled = !isTableActive(table) || controlsDisabled || !selectedOwnRune;
+  els.spendRune.disabled = turnActionsDisabled || !selectedOwnRune;
+  els.recycleRune.disabled = turnActionsDisabled || !selectedOwnRune;
   els.claimBattlefield.disabled = els.claimBattlefield.disabled || selected?.zone !== "battlefields";
-  els.startShowdown.disabled = !isTableActive(table) || controlsDisabled || !selected || selected.zone !== "battlefields";
-  els.showdownWinnerSelect.disabled = !isTableActive(table) || controlsDisabled || !table?.active_showdown;
-  els.endShowdown.disabled = !isTableActive(table) || controlsDisabled || !table?.active_showdown;
+  els.startShowdown.disabled = turnActionsDisabled || !selected || selected.zone !== "battlefields";
+  els.showdownWinnerSelect.disabled = turnActionsDisabled || !table?.active_showdown;
+  els.endShowdown.disabled = turnActionsDisabled || !table?.active_showdown;
   if (!table) {
     state.selectedCard = null;
     els.tableTitle.textContent = "No table selected";
@@ -752,6 +755,7 @@ function seatHud(seat) {
     ["Hand", zoneCount(seat, "hand")],
     ["Deck", zoneCount(seat, "main_deck")],
     ["Runes", zoneCount(seat, "rune_pool")],
+    ["Energy", seat.temporary_energy || 0],
   ]) {
     const chip = document.createElement("span");
     chip.append(text("b", value), document.createTextNode(label));

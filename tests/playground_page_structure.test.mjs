@@ -124,8 +124,10 @@ test("playground client keeps Start host-only and locks card actions until activ
   assert.match(js, /function hostUserId/);
   assert.match(js, /function canStartTable/);
   assert.match(js, /function isTableActive/);
+  assert.match(js, /const turnActionsDisabled = !isTableActive\(table\) \|\| controlsDisabled \|\| !isCurrentTurn\(table\)/);
   assert.match(js, /els\.startGame\.disabled = !canStartTable\(table\)/);
-  assert.match(js, /control\.disabled = !isTableActive\(table\) \|\| controlsDisabled/);
+  assert.match(js, /control\.disabled = turnActionsDisabled/);
+  assert.match(js, /els\.concedeGame\.disabled = !isTableActive\(table\) \|\| controlsDisabled/);
 });
 
 test("playground exposes point scoring controls and summaries", async () => {
@@ -158,6 +160,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(js, /orderedSeats\(table\)\.map\(seatZones\)/);
   assert.match(js, /seat-hud/);
   assert.match(js, /seat-counters/);
+  assert.match(js, /\["Energy", seat\.temporary_energy \|\| 0\]/);
   assert.match(js, /zone-metadata/);
   assert.match(js, /zone-empty/);
   assert.match(js, /function zoneCardPreviewLimit/);

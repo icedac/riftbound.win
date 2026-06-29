@@ -429,3 +429,71 @@ test("cards can move through the public chain zone", () => {
   assert.equal(table.seats[0].zones.chain[0].instance_id, selected);
   assert.equal(table.seats[0].zones.hand.length, 0);
 });
+
+test("a normal manual game can be simulated from setup through victory", () => {
+  let table = createPlaygroundTable({ id: "table-1", savedDeck: battlefieldDeck("deck-1"), user: host, now: 1000 });
+  table = joinPlaygroundTable({ table, savedDeck: battlefieldDeck("deck-2"), user: guest, now: 1100 });
+
+  table = appendTableEvent(table, { actorId: host.id, type: "setup.deal", payload: {}, now: 1200 });
+  const mulliganed = table.seats[0].zones.hand[0].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "hand.mulligan",
+    payload: { seat_index: 0, instance_id: mulliganed, seed: "full-game-mulligan" },
+    now: 1300,
+  });
+  table = appendTableEvent(table, { actorId: host.id, type: "game.start", payload: { first_player_id: host.id }, now: 1400 });
+
+  const hostHandCard = table.seats[0].zones.hand[0].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "card.move",
+    payload: { seat_index: 0, from: "hand", to: "base", instance_id: hostHandCard },
+    now: 1500,
+  });
+  table = appendTableEvent(table, { actorId: host.id, type: "card.move", payload: { seat_index: 0, from: "rune_deck", to: "rune_pool", count: 2 }, now: 1600 });
+  const spentRune = table.seats[0].zones.rune_pool[0].instance_id;
+  const recycledRune = table.seats[0].zones.rune_pool[1].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "rune.spend",
+    payload: { seat_index: 0, zone: "rune_pool", instance_id: spentRune },
+    now: 1700,
+  });
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "rune.recycle",
+    payload: { seat_index: 0, zone: "rune_pool", instance_id: recycledRune },
+    now: 1800,
+  });
+  const battlefield = table.seats[0].zones.battlefields[0].instance_id;
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "battlefield.claim",
+    payload: { seat_index: 0, zone: "battlefields", instance_id: battlefield },
+    now: 1900,
+  });
+  table = appendTableEvent(table, {
+    actorId: host.id,
+    type: "showdown.start",
+    payload: { seat_index: 0, zone: "battlefields", instance_id: battlefield, attacker_user_id: host.id, defender_user_id: guest.id },
+    now: 2000,
+  });
+  table = appendTableEvent(table, { actorId: host.id, type: "showdown.end", payload: { winner_user_id: host.id }, now: 2100 });
+  table = appendTableEvent(table, { actorId: host.id, type: "score.point", payload: { amount: 7, source: "battlefield", battlefield_instance_id: battlefield }, now: 2200 });
+  table = appendTableEvent(table, { actorId: host.id, type: "turn.pass", payload: { to_user_id: guest.id }, now: 2300 });
+  table = appendTableEvent(table, { actorId: guest.id, type: "turn.pass", payload: { to_user_id: host.id }, now: 2400 });
+  table = appendTableEvent(table, { actorId: host.id, type: "score.point", payload: { amount: 1, source: "battlefield", battlefield_instance_id: battlefield }, now: 2500 });
+
+  assert.equal(table.status, "completed");
+  assert.equal(table.result.final, "host-win");
+  assert.equal(table.result.winner_user_id, host.id);
+  assert.equal(table.seats[0].points, 8);
+  assert.equal(table.seats[0].temporary_energy, 0);
+  assert.equal(table.seats[0].zones.rune_pool.find((card) => card.instance_id === spentRune).exhausted, false);
+  assert.equal(table.seats[0].zones.rune_pool.some((card) => card.instance_id === recycledRune), true);
+  assert.equal(table.seats[0].zones.battlefields[0].controller_user_id, host.id);
+  assert.equal(table.showdown_history.length, 1);
+  assert.equal(table.events.at(-1).type, "score.point");
+  assert.equal(buildReplayFrames(table).at(-1).table.status, "completed");
+});
