@@ -1,11 +1,8 @@
-const PROVIDERS = [
-  ["google", "Google"],
-  ["naver", "Naver"],
-];
+const PUBLIC_PROVIDERS = [["naver", "Naver"]];
 
 export function authProviderActions(me = {}) {
   const providers = me?.auth?.providers || {};
-  return PROVIDERS.map(([provider, label]) => {
+  return PUBLIC_PROVIDERS.map(([provider, label]) => {
     const status = providers[provider] || {};
     const missing = Array.isArray(status.missing) ? status.missing : [];
     const enabled = status.configured !== false;
@@ -36,7 +33,7 @@ export function authProviderLabel(action = {}) {
 
 export function authReadinessMessage(me = {}) {
   const missing = authProviderActions(me).filter((action) => !action.enabled);
-  if (missing.length === 0) return "Sign in with Google or Naver.";
+  if (missing.length === 0) return "Sign in with Naver.";
   if (missing.length === 1) return `${missing[0].label} login setup is incomplete.`;
   return `${joinLabels(missing.map((action) => action.label))} login setup is incomplete.`;
 }
@@ -55,36 +52,7 @@ export function runtimeSetupItems(me = {}) {
     callbackUrl: action.callbackUrl,
   }));
 
-  return [...authItems, mediaSetupItem(me?.media || {})];
-}
-
-function mediaSetupItem(media = {}) {
-  if (media.store === "r2") {
-    return {
-      key: "media",
-      label: "Media uploads",
-      status: "Ready",
-      tone: "ready",
-      detail: `R2 MEDIA binding connected; uploads support ${formatBytes(media.max_upload_bytes)} media and ${formatBytes(media.max_avatar_bytes)} avatars.`,
-      callbackUrl: "",
-    };
-  }
-
-  return {
-    key: "media",
-    label: "Media uploads",
-    status: "D1 fallback",
-    tone: "warning",
-    detail: `R2 MEDIA binding is not connected; uploads are limited to ${formatBytes(media.max_upload_bytes)} media and ${formatBytes(media.max_avatar_bytes)} avatars.`,
-    callbackUrl: "",
-  };
-}
-
-function formatBytes(value) {
-  const bytes = Number(value) || 0;
-  if (bytes >= 1024 * 1024) return `${Math.round(bytes / (1024 * 1024))} MB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${bytes} B`;
+  return authItems;
 }
 
 function joinLabels(labels) {

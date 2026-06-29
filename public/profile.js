@@ -3,7 +3,7 @@ import {
   authProviderDetail,
   authReadinessMessage,
   runtimeSetupItems,
-} from "/auth-state.js?v=20260628-readiness1";
+} from "/auth-state.js?v=20260629-naver1";
 
 const els = {
   status: document.querySelector("#profileStatus"),

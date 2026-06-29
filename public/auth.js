@@ -2,21 +2,17 @@ import {
   authProviderActions,
   authProviderDetail,
   authProviderLabel,
-} from "/auth-state.js?v=20260628-readiness1";
+} from "/auth-state.js?v=20260629-naver1";
 
 const shell = document.querySelector("[data-auth-shell]");
 
 if (shell) bootAuth();
 
 async function bootAuth() {
-  renderLoading();
+  renderSignedOut();
   const me = await fetchJson("/api/me");
   if (me?.user) renderSignedIn(me);
   else renderSignedOut(me);
-}
-
-function renderLoading() {
-  shell.replaceChildren(buttonLink("/profile/", "Profile"));
 }
 
 function renderSignedIn(me) {

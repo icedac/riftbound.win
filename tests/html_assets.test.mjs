@@ -125,6 +125,17 @@ test("auth and profile apps cache-bust auth state helper imports", async () => {
   }
 });
 
+test("auth app renders the public Naver action before waiting on /api/me", async () => {
+  const source = await readFile(new URL("../public/auth.js", import.meta.url), "utf8");
+
+  assert.doesNotMatch(source, /renderLoading\(\)/);
+  assert.match(source, /renderSignedOut\(\)/);
+  assert.ok(
+    source.indexOf("renderSignedOut()") < source.indexOf('fetchJson("/api/me")'),
+    "auth shell should render the signed-out action before fetching profile state"
+  );
+});
+
 test("profile page exposes runtime setup readiness diagnostics", async () => {
   const html = await readFile(new URL("../public/profile/index.html", import.meta.url), "utf8");
   const source = await readFile(new URL("../public/profile.js", import.meta.url), "utf8");

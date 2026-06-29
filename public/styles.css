@@ -2371,10 +2371,16 @@ dialog::backdrop {
 .table-topline {
   grid-area: topline;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  align-items: center;
+  align-items: start;
   padding: 4px 6px 0;
+}
+
+.table-heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 #tableTitle {
@@ -2386,12 +2392,31 @@ dialog::backdrop {
   white-space: nowrap;
 }
 
+.seat-role-status {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 26px;
+  align-items: center;
+  overflow: hidden;
+  padding: 4px 10px;
+  border: 1px solid rgb(45 212 191 / 25%);
+  border-radius: 999px;
+  background: rgb(45 212 191 / 9%);
+  color: #bff9ee;
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .table-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: flex-start;
-  max-width: min(100%, 760px);
-  overflow-x: auto;
+  width: 100%;
+  max-width: none;
+  overflow: visible;
   gap: 6px;
   padding-bottom: 2px;
 }
@@ -2470,7 +2495,7 @@ dialog::backdrop {
   grid-area: board;
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  min-height: min(900px, calc(100svh - 132px));
+  height: clamp(430px, calc(100svh - 230px), 760px);
   overflow: hidden;
   gap: clamp(10px, 2.1svh, 24px);
   padding: clamp(8px, 1.25vw, 16px);
@@ -2532,6 +2557,24 @@ dialog::backdrop {
   color: var(--muted);
   font-size: 11px;
   font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat-role-pill {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 20px;
+  align-items: center;
+  overflow: hidden;
+  padding: 2px 7px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 999px;
+  color: #bff9ee;
+  background: rgb(45 212 191 / 9%);
+  font-size: 10px;
+  font-weight: 880;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

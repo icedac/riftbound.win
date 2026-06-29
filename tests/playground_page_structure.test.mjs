@@ -26,6 +26,7 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
     'id="playgroundDecks"',
     'id="playgroundTable"',
     'id="tableZones"',
+    'id="seatRoleStatus"',
     'id="dealOpening"',
     'id="mulliganSelected"',
     'id="drawOpening"',
@@ -72,6 +73,20 @@ test("playground page exposes lobby, deck picker, table, chat, voice, result, an
   ]) {
     assert.match(html, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), required);
   }
+});
+
+test("playground top controls wrap visibly and expose viewer role state", async () => {
+  const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
+  const css = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
+
+  assert.match(js, /seatRoleStatus/);
+  assert.match(js, /function viewerRoleStatus/);
+  assert.match(js, /data-viewer-role/);
+  assert.match(css, /\.seat-role-status/);
+  assert.match(css, /\.table-actions\s*\{[^}]*flex-wrap: wrap;/s);
+  assert.match(css, /\.table-actions\s*\{[^}]*max-width: none;/s);
+  assert.match(css, /\.table-actions\s*\{[^}]*overflow: visible;/s);
+  assert.doesNotMatch(css, /\.table-actions\s*\{[^}]*overflow-x: auto;/s);
 });
 
 test("playground client uses shared server table APIs instead of browser-local tables", async () => {
@@ -126,6 +141,8 @@ test("playground client keeps Start host-only and locks card actions until activ
   assert.match(js, /function isTableActive/);
   assert.match(js, /const turnActionsDisabled = !isTableActive\(table\) \|\| controlsDisabled \|\| !isCurrentTurn\(table\)/);
   assert.match(js, /els\.startGame\.disabled = !canStartTable\(table\)/);
+  assert.match(js, /const shuffleActionsDisabled = controlsDisabled \|\| table\?\.status === "completed"/);
+  assert.match(js, /els\.shuffleMainDeck\.disabled = shuffleActionsDisabled/);
   assert.match(js, /control\.disabled = turnActionsDisabled/);
   assert.match(js, /els\.concedeGame\.disabled = !isTableActive\(table\) \|\| controlsDisabled/);
 });
@@ -191,7 +208,7 @@ test("playground renders Hearthstone-style seats with card images and hover prev
   assert.match(css, /\.playground-table\s*\{[^}]*grid-template-columns: minmax\(0, 1fr\)/s);
   assert.match(css, /grid-template-areas:[^;]*"topline"[^;]*"board"[^;]*"tools"/s);
   assert.match(css, /\.playground-table::before/);
-  assert.match(css, /\.table-zones\s*\{[^}]*min-height: min\(900px, calc\(100svh - 132px\)\)/s);
+  assert.match(css, /\.table-zones\s*\{[^}]*height: clamp\(430px, calc\(100svh - 230px\), 760px\)/s);
   assert.match(css, /\.table-zones\s*\{[^}]*grid-area: board;/s);
   assert.match(css, /\.seat-hud/);
   assert.match(css, /\.seat-counters/);

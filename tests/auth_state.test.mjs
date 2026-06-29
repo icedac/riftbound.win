@@ -9,7 +9,7 @@ import {
   runtimeSetupItems,
 } from "../public/auth-state.js";
 
-test("authProviderActions returns enabled login links only for configured providers", () => {
+test("authProviderActions exposes only the public Naver login action", () => {
   const actions = authProviderActions({
     auth: {
       providers: {
@@ -30,15 +30,6 @@ test("authProviderActions returns enabled login links only for configured provid
 
   assert.deepEqual(actions, [
     {
-      provider: "google",
-      label: "Google",
-      href: "/profile/?auth=google-missing",
-      enabled: false,
-      status: "Needs setup",
-      missing: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
-      callbackUrl: "https://riftbound.kr/api/auth/google/callback",
-    },
-    {
       provider: "naver",
       label: "Naver",
       href: "/api/auth/naver/start",
@@ -50,8 +41,8 @@ test("authProviderActions returns enabled login links only for configured provid
   ]);
 });
 
-test("authProviderDetail explains missing setup and callback URLs", () => {
-  const [google, naver] = authProviderActions({
+test("authProviderDetail explains Naver callback readiness", () => {
+  const [naver] = authProviderActions({
     auth: {
       providers: {
         google: {
@@ -68,19 +59,15 @@ test("authProviderDetail explains missing setup and callback URLs", () => {
     },
   });
 
-  assert.equal(
-    authProviderDetail(google),
-    "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET · callback https://riftbound.kr/api/auth/google/callback"
-  );
   assert.equal(authProviderDetail(naver), "Ready · callback https://riftbound.kr/api/auth/naver/callback");
 });
 
 test("authProviderLabel makes unconfigured header buttons explicit", () => {
-  assert.equal(authProviderLabel({ label: "Google", enabled: true }), "Google");
+  assert.equal(authProviderLabel({ label: "Naver", enabled: true }), "Naver");
   assert.equal(authProviderLabel({ label: "Naver", enabled: false }), "Naver setup");
 });
 
-test("authReadinessMessage names missing provider setup", () => {
+test("authReadinessMessage names only public Naver setup", () => {
   assert.equal(
     authReadinessMessage({
       auth: {
@@ -90,13 +77,13 @@ test("authReadinessMessage names missing provider setup", () => {
         },
       },
     }),
-    "Google and Naver login setup is incomplete."
+    "Naver login setup is incomplete."
   );
 
-  assert.equal(authReadinessMessage({ auth: { providers: {} } }), "Sign in with Google or Naver.");
+  assert.equal(authReadinessMessage({ auth: { providers: {} } }), "Sign in with Naver.");
 });
 
-test("runtimeSetupItems summarizes OAuth callbacks and media binding status", () => {
+test("runtimeSetupItems summarizes only public Naver OAuth readiness", () => {
   const items = runtimeSetupItems({
     auth: {
       providers: {
@@ -121,28 +108,12 @@ test("runtimeSetupItems summarizes OAuth callbacks and media binding status", ()
 
   assert.deepEqual(items, [
     {
-      key: "google",
-      label: "Google login",
-      status: "Needs setup",
-      tone: "warning",
-      detail: "Missing GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET",
-      callbackUrl: "https://riftbound.win/api/auth/google/callback",
-    },
-    {
       key: "naver",
       label: "Naver login",
       status: "Ready",
       tone: "ready",
       detail: "OAuth provider configured",
       callbackUrl: "https://riftbound.win/api/auth/naver/callback",
-    },
-    {
-      key: "media",
-      label: "Media uploads",
-      status: "D1 fallback",
-      tone: "warning",
-      detail: "R2 MEDIA binding is not connected; uploads are limited to 1 MB media and 1 MB avatars.",
-      callbackUrl: "",
     },
   ]);
 });

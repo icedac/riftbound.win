@@ -60,7 +60,9 @@ const els = {
   createTable: document.querySelector("#createTable"),
   joinTable: document.querySelector("#joinTable"),
   tableList: document.querySelector("#tableList"),
+  tablePanel: document.querySelector("#playgroundTable"),
   tableTitle: document.querySelector("#tableTitle"),
+  seatRoleStatus: document.querySelector("#seatRoleStatus"),
   tableZones: document.querySelector("#tableZones"),
   eventLog: document.querySelector("#eventLog"),
   chatLog: document.querySelector("#chatLog"),
@@ -646,15 +648,17 @@ function tableButton(table) {
 
 function renderTable() {
   const table = currentTable();
+  renderViewerRole(table);
   const controlsDisabled = !table || !state.me || !currentSeat();
+  const shuffleActionsDisabled = controlsDisabled || table?.status === "completed";
   const turnActionsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   const phaseControlsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   const selected = selectedCardRecord();
   els.startGame.disabled = !canStartTable(table);
   els.dealOpening.disabled = !canDealOpening(table);
   els.mulliganSelected.disabled = controlsDisabled || !isSetupOpen(table) || !selected || selected.zone !== "hand" || selected.seat.user_id !== currentUserId();
-  els.shuffleMainDeck.disabled = controlsDisabled;
-  els.shuffleRuneDeck.disabled = controlsDisabled;
+  els.shuffleMainDeck.disabled = shuffleActionsDisabled;
+  els.shuffleRuneDeck.disabled = shuffleActionsDisabled;
   for (const control of [els.drawOpening, els.drawRune, els.revealCard, els.moveBattlefield, els.scorePoint, els.passTurn]) {
     control.disabled = turnActionsDisabled;
   }
@@ -703,7 +707,7 @@ function renderTable() {
 
 function seatZones(seat) {
   const root = document.createElement("article");
-  root.className = ["seat-board", seat.user_id === currentUserId() ? "is-current-player" : "is-opponent-player"].join(" ");
+  root.className = ["seat-board", seatClassForViewer(seat)].join(" ");
   root.dataset.seatIndex = seat.seat_index;
   root.append(seatHud(seat));
   const zones = document.createElement("div");
@@ -747,7 +751,9 @@ function seatHud(seat) {
   const hud = document.createElement("header");
   hud.className = "seat-hud";
   const title = document.createElement("div");
-  title.append(text("h3", seat.display_name || "Player"), text("small", seat.deck_name || "Untitled Deck"));
+  const role = text("span", seatRoleLabel(seat));
+  role.className = "seat-role-pill";
+  title.append(text("h3", seat.display_name || "Player"), text("small", seat.deck_name || "Untitled Deck"), role);
   const counters = document.createElement("div");
   counters.className = "seat-counters";
   for (const [label, value] of [
@@ -854,8 +860,52 @@ function currentSeat() {
   return currentTable()?.seats?.find((seat) => seat.user_id === currentUserId()) || null;
 }
 
+function renderViewerRole(table) {
+  const role = viewerRoleStatus(table);
+  els.seatRoleStatus.textContent = role.label;
+  els.tablePanel.setAttribute("data-viewer-role", role.key);
+  els.tableZones.setAttribute("data-viewer-role", role.key);
+}
+
+function viewerRoleStatus(table) {
+  if (!table) return { key: "empty", label: "No table selected" };
+  if (!state.me) return { key: "signed-out", label: "Sign in to play" };
+  const seat = currentSeat();
+  if (!seat) {
+    const seats = table.seats || [];
+    return {
+      key: "spectator",
+      label: seats.length >= 2 ? "Spectator · table full" : "Spectator · choose a deck and join",
+    };
+  }
+  const player = `Player ${Number(seat.seat_index || 0) + 1}`;
+  if (table.status === "waiting") {
+    const role = currentUserId() === hostUserId(table) ? "Host" : "Joined";
+    return { key: `player-${Number(seat.seat_index || 0) + 1}`, label: `${player} · ${role} · waiting to start` };
+  }
+  if (table.status === "completed") {
+    const final = resultLabel(table.result?.final);
+    return { key: `player-${Number(seat.seat_index || 0) + 1}`, label: `${player} · Game complete · ${final}` };
+  }
+  const turn = isCurrentTurn(table) ? "Your turn" : `Waiting for ${playerName(table, table.turn_player_id)}`;
+  return { key: `player-${Number(seat.seat_index || 0) + 1}`, label: `${player} · ${turn}` };
+}
+
+function seatClassForViewer(seat) {
+  if (seat.user_id === currentUserId()) return "is-current-player";
+  if (currentSeat()) return "is-opponent-player";
+  return `is-spectator-seat is-seat-${Number(seat.seat_index || 0) + 1}`;
+}
+
+function seatRoleLabel(seat) {
+  if (seat.user_id === currentUserId()) return `You · Player ${Number(seat.seat_index || 0) + 1}`;
+  if (currentSeat()) return `Opponent · Player ${Number(seat.seat_index || 0) + 1}`;
+  return `Player ${Number(seat.seat_index || 0) + 1}`;
+}
+
 function orderedSeats(table) {
   const seats = [...(table?.seats || [])];
+  if (!currentSeat()) return seats.sort((a, b) => Number(a.seat_index || 0) - Number(b.seat_index || 0));
   return seats.sort((a, b) => Number(a.user_id === currentUserId()) - Number(b.user_id === currentUserId()));
 }
 
