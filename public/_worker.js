@@ -256,7 +256,12 @@ async function listPlaygroundTables(request, env) {
   const rows = await env.DB.prepare(
     "SELECT active_snapshot_json FROM playground_tables ORDER BY updated_at DESC LIMIT 80"
   ).all();
-  return json({ tables: (rows.results || []).map((row) => publicTableForUser(safeJson(row.active_snapshot_json, {}), session?.user?.id || "")) });
+  return json({
+    tables: (rows.results || [])
+      .map((row) => safeJson(row.active_snapshot_json, {}))
+      .filter((table) => !isLegacySinglePlayerActiveTable(table))
+      .map((table) => publicTableForUser(table, session?.user?.id || "")),
+  });
 }
 
 async function createPlaygroundTable(request, env) {
@@ -307,6 +312,8 @@ async function joinPlaygroundTable(request, env, tableId) {
   if (seatCount >= 2) return json({ error: "Table is full" }, 409);
   const now = Date.now();
   const table = safeJson(row.active_snapshot_json, {});
+  const tableStatus = table.status || row.status || "waiting";
+  if (tableStatus !== "waiting" || row.status !== "waiting") return json({ error: "Table is not joinable" }, 409);
   if (!Array.isArray(table.seats)) table.seats = [];
   table.seats.push(createSeatSnapshot(seatCount, session.user, deck, now));
   const status = row.status || table.status || "waiting";
@@ -882,6 +889,7 @@ function createSeatSnapshot(seatIndex, user, deck, joinedAt) {
 
 function publicTableForUser(table = {}, viewerUserId = "") {
   const next = cloneJson(table && typeof table === "object" ? table : {});
+  markInvalidLegacyTable(next);
   for (const seat of next.seats || []) {
     for (const [zone, cards] of Object.entries(seat.zones || {})) {
       if (!Array.isArray(cards)) continue;
@@ -889,6 +897,17 @@ function publicTableForUser(table = {}, viewerUserId = "") {
     }
   }
   return next;
+}
+
+function isLegacySinglePlayerActiveTable(table = {}) {
+  return table?.status === "active" && (!Array.isArray(table.seats) || table.seats.length < 2);
+}
+
+function markInvalidLegacyTable(table = {}) {
+  if (!isLegacySinglePlayerActiveTable(table)) return table;
+  table.status = "invalid";
+  table.invalid_state = "missing-opponent";
+  return table;
 }
 
 function publicCardForUser(card = {}, seat = {}, zone = "", viewerUserId = "", index = 0) {
@@ -990,6 +1009,9 @@ function validatePlaygroundEvent(table, user, eventType, payload = {}) {
   if (privateActionError) return privateActionError;
   if (eventType === "hand.mulligan" && table.status !== "waiting") {
     return { status: 409, message: "Setup is closed" };
+  }
+  if (activePlaygroundEventTypes().has(eventType) && isLegacySinglePlayerActiveTable(table)) {
+    return { status: 409, message: "Table is not playable" };
   }
   if (activePlaygroundEventTypes().has(eventType) && table.status !== "active") {
     return { status: 409, message: "Game has not started" };

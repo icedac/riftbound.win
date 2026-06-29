@@ -1230,6 +1230,83 @@ async fn local_playground_rune_spend_and_recycle_actions() {
 }
 
 #[tokio::test]
+async fn local_playground_hides_and_blocks_legacy_active_single_player_tables() {
+    let (app, temp) = test_router();
+    let host_cookie = login(&app, "google").await;
+    let guest_cookie = login(&app, "naver").await;
+    let host_deck = create_test_deck(&app, &host_cookie, "Host Deck").await;
+    let guest_deck = create_test_deck(&app, &guest_cookie, "Guest Deck").await;
+
+    let create = request(
+        &app,
+        Method::POST,
+        "/api/playground/tables",
+        Some(&host_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            host_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let mut created = json(create).await;
+    let table_id = created["table"]["id"].as_str().unwrap().to_string();
+    created["table"]["status"] = Value::String("active".to_string());
+
+    let db = Connection::open(temp.path().join("riftbound.sqlite")).expect("open db");
+    db.execute(
+        "UPDATE local_playground_tables SET status = 'active', active_snapshot_json = ? WHERE id = ?",
+        rusqlite::params![created["table"].to_string(), table_id],
+    )
+    .expect("mark table active");
+
+    let lobby = json(
+        request(
+            &app,
+            Method::GET,
+            "/api/playground/tables",
+            Some(&host_cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(lobby["tables"].as_array().unwrap().len(), 0);
+
+    let detail = json(
+        request(
+            &app,
+            Method::GET,
+            &format!("/api/playground/tables/{table_id}"),
+            Some(&host_cookie),
+            None,
+            Body::empty(),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(detail["table"]["status"], "invalid");
+    assert_eq!(detail["table"]["invalid_state"], "missing-opponent");
+
+    let join = request(
+        &app,
+        Method::POST,
+        &format!("/api/playground/tables/{table_id}/join"),
+        Some(&guest_cookie),
+        Some("application/json"),
+        Body::from(format!(
+            r#"{{"deck_id":"{}"}}"#,
+            guest_deck["id"].as_str().unwrap()
+        )),
+    )
+    .await;
+    assert_eq!(join.status(), StatusCode::CONFLICT);
+    assert_eq!(json(join).await["error"], "Table is not joinable");
+}
+
+#[tokio::test]
 async fn local_playground_card_move_supports_chain_zone() {
     let (app, _temp) = test_router();
     let host_cookie = login(&app, "google").await;

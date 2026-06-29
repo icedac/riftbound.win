@@ -621,7 +621,7 @@ function renderDecks() {
   els.decks.disabled = !state.savedDecks.length;
   els.createTable.disabled = !state.me || !state.savedDecks.length;
   const table = currentTable();
-  els.joinTable.disabled = !state.me || !state.savedDecks.length || !table || (table.seats || []).length >= 2;
+  els.joinTable.disabled = !canJoinTable(table);
 }
 
 function renderTables() {
@@ -649,7 +649,7 @@ function tableButton(table) {
 function renderTable() {
   const table = currentTable();
   renderViewerRole(table);
-  const controlsDisabled = !table || !state.me || !currentSeat();
+  const controlsDisabled = !table || table.status === "invalid" || !state.me || !currentSeat();
   const shuffleActionsDisabled = controlsDisabled || table?.status === "completed";
   const turnActionsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
   const phaseControlsDisabled = !isTableActive(table) || controlsDisabled || !isCurrentTurn(table);
@@ -870,6 +870,7 @@ function renderViewerRole(table) {
 function viewerRoleStatus(table) {
   if (!table) return { key: "empty", label: "No table selected" };
   if (!state.me) return { key: "signed-out", label: "Sign in to play" };
+  if (table.status === "invalid") return { key: "invalid", label: "Table unavailable · missing opponent" };
   const seat = currentSeat();
   if (!seat) {
     const seats = table.seats || [];
@@ -913,6 +914,18 @@ function hostUserId(table) {
   return table?.seats?.[0]?.user_id || "";
 }
 
+function canJoinTable(table) {
+  return Boolean(
+    table &&
+      state.me &&
+      selectedDeck() &&
+      !currentSeat() &&
+      table.status === "waiting" &&
+      !table.invalid_state &&
+      (table.seats || []).length < 2
+  );
+}
+
 function canStartTable(table) {
   return Boolean(
     table &&
@@ -941,7 +954,7 @@ function isSetupOpen(table) {
 }
 
 function isTableActive(table) {
-  return table?.status === "active";
+  return table?.status === "active" && !table?.invalid_state && (table.seats || []).length >= 2;
 }
 
 function isCurrentTurn(table) {

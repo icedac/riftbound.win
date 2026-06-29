@@ -137,8 +137,10 @@ test("playground client keeps Start host-only and locks card actions until activ
   const js = await readFile(new URL("../public/playground.js", import.meta.url), "utf8");
 
   assert.match(js, /function hostUserId/);
+  assert.match(js, /function canJoinTable/);
   assert.match(js, /function canStartTable/);
   assert.match(js, /function isTableActive/);
+  assert.match(js, /els\.joinTable\.disabled = !canJoinTable\(table\)/);
   assert.match(js, /const turnActionsDisabled = !isTableActive\(table\) \|\| controlsDisabled \|\| !isCurrentTurn\(table\)/);
   assert.match(js, /els\.startGame\.disabled = !canStartTable\(table\)/);
   assert.match(js, /const shuffleActionsDisabled = controlsDisabled \|\| table\?\.status === "completed"/);

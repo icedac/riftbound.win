@@ -937,6 +937,59 @@ test("worker persists playground tables, seats, snapshots, and append-only event
   assert.equal(eventList.events[5].type, "score.point");
 });
 
+test("worker hides and blocks legacy active single-player playground tables", async () => {
+  const db = new InMemoryD1Database();
+  seedPlaygroundDuel(db);
+  const env = { DB: db, ASSETS: { fetch: () => new Response("asset") } };
+
+  const create = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=host-session" },
+      body: JSON.stringify({ deck_id: "host-deck" }),
+    }),
+    env
+  );
+  assert.equal(create.status, 201);
+  const created = await create.json();
+  const table = db.playgroundTables[0];
+  const snapshot = JSON.parse(table.active_snapshot_json);
+  snapshot.status = "active";
+  table.status = "active";
+  table.active_snapshot_json = JSON.stringify(snapshot);
+
+  const lobby = await worker.fetch(
+    new Request("https://riftbound.kr/api/playground/tables", {
+      headers: { Cookie: "rw_session=host-session" },
+    }),
+    env
+  );
+  assert.equal(lobby.status, 200);
+  assert.deepEqual((await lobby.json()).tables, []);
+
+  const detail = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${created.table.id}`, {
+      headers: { Cookie: "rw_session=host-session" },
+    }),
+    env
+  );
+  assert.equal(detail.status, 200);
+  const detailBody = await detail.json();
+  assert.equal(detailBody.table.status, "invalid");
+  assert.equal(detailBody.table.invalid_state, "missing-opponent");
+
+  const join = await worker.fetch(
+    new Request(`https://riftbound.kr/api/playground/tables/${created.table.id}/join`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: "rw_session=guest-session" },
+      body: JSON.stringify({ deck_id: "guest-deck" }),
+    }),
+    env
+  );
+  assert.equal(join.status, 409);
+  assert.equal((await join.json()).error, "Table is not joinable");
+});
+
 test("worker records card exhaust state and readies channeled runes on new turns", async () => {
   const db = new InMemoryD1Database();
   seedPlaygroundDuel(db, { hostRunes: 4, guestRunes: 4 });

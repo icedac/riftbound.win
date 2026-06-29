@@ -496,6 +496,7 @@ async fn list_playground_tables(
         Ok(tables) => json_response(json!({
             "tables": tables
                 .iter()
+                .filter(|table| !is_legacy_single_player_active_table(table))
                 .map(|table| public_table_for_user(table, &viewer_user_id))
                 .collect::<Vec<_>>()
         })),
@@ -595,6 +596,13 @@ async fn join_playground_table(
         }
         let now = now_ms();
         let mut table = safe_json(&row.2, json!({}));
+        let table_status = table
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or(row.1.as_str());
+        if table_status != "waiting" || row.1 != "waiting" {
+            anyhow::bail!("Table is not joinable");
+        }
         let seat = create_seat_snapshot(seat_count as usize, &user, &deck, now);
         table
             .get_mut("seats")
@@ -618,6 +626,11 @@ async fn join_playground_table(
         Err(error) if error.to_string().contains("Table is full") => (
             StatusCode::CONFLICT,
             Json(json!({ "error": "Table is full" })),
+        )
+            .into_response(),
+        Err(error) if error.to_string().contains("Table is not joinable") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Table is not joinable" })),
         )
             .into_response(),
         Err(error) => server_error(error),
@@ -727,6 +740,11 @@ async fn append_playground_event(
         Err(error) if error.to_string().contains("Game has not started") => (
             StatusCode::CONFLICT,
             Json(json!({ "error": "Game has not started" })),
+        )
+            .into_response(),
+        Err(error) if error.to_string().contains("Table is not playable") => (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "Table is not playable" })),
         )
             .into_response(),
         Err(error) => server_error(error),
@@ -1252,6 +1270,7 @@ fn create_seat_snapshot(
 
 fn public_table_for_user(table: &Value, viewer_user_id: &str) -> Value {
     let mut public_table = table.clone();
+    mark_invalid_legacy_table(&mut public_table);
     let Some(seats) = public_table.get_mut("seats").and_then(Value::as_array_mut) else {
         return public_table;
     };
@@ -1280,6 +1299,18 @@ fn public_table_for_user(table: &Value, viewer_user_id: &str) -> Value {
         }
     }
     public_table
+}
+
+fn is_legacy_single_player_active_table(table: &Value) -> bool {
+    table.get("status").and_then(Value::as_str) == Some("active") && playground_seat_len(table) < 2
+}
+
+fn mark_invalid_legacy_table(table: &mut Value) {
+    if !is_legacy_single_player_active_table(table) {
+        return;
+    }
+    table["status"] = json!("invalid");
+    table["invalid_state"] = json!("missing-opponent");
 }
 
 fn public_card_for_user(
@@ -1464,6 +1495,9 @@ fn validate_playground_event(
         && table.get("status").and_then(Value::as_str) != Some("waiting")
     {
         anyhow::bail!("Setup is closed");
+    }
+    if active_playground_event_type(event_type) && is_legacy_single_player_active_table(table) {
+        anyhow::bail!("Table is not playable");
     }
     if active_playground_event_type(event_type)
         && table.get("status").and_then(Value::as_str) != Some("active")
